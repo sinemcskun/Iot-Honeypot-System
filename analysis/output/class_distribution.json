@@ -1,0 +1,117 @@
+{
+  "label_bruteforce": {
+    "type": "binary",
+    "positive": 507,
+    "negative": 61227,
+    "total": 61734,
+    "positive_pct": 0.82,
+    "ratio": 120.8
+  },
+  "label_malware_dropper": {
+    "type": "binary",
+    "positive": 224,
+    "negative": 61510,
+    "total": 61734,
+    "positive_pct": 0.36,
+    "ratio": 274.6
+  },
+  "label_reconnaissance": {
+    "type": "binary",
+    "positive": 915,
+    "negative": 60819,
+    "total": 61734,
+    "positive_pct": 1.48,
+    "ratio": 66.5
+  },
+  "label_lateral_movement": {
+    "type": "binary",
+    "positive": 5324,
+    "negative": 56410,
+    "total": 61734,
+    "positive_pct": 8.62,
+    "ratio": 10.6
+  },
+  "label_credential_spray": {
+    "type": "binary",
+    "positive": 11127,
+    "negative": 50607,
+    "total": 61734,
+    "positive_pct": 18.02,
+    "ratio": 4.5
+  },
+  "label_tunneling": {
+    "type": "binary",
+    "positive": 533,
+    "negative": 61201,
+    "total": 61734,
+    "positive_pct": 0.86,
+    "ratio": 114.8
+  },
+  "label_data_exfiltration": {
+    "type": "binary",
+    "positive": 20,
+    "negative": 61714,
+    "total": 61734,
+    "positive_pct": 0.03,
+    "ratio": 3085.7
+  },
+  "label_destructive": {
+    "type": "binary",
+    "positive": 66,
+    "negative": 61668,
+    "total": 61734,
+    "positive_pct": 0.11,
+    "ratio": 934.4
+  },
+  "label_port_scan": {
+    "type": "binary",
+    "positive": 161,
+    "negative": 61573,
+    "total": 61734,
+    "positive_pct": 0.26,
+    "ratio": 382.4
+  },
+  "label_service_interaction": {
+    "type": "binary",
+    "positive": 13815,
+    "negative": 47919,
+    "total": 61734,
+    "positive_pct": 22.38,
+    "ratio": 3.5
+  },
+  "label_network_probe": {
+    "type": "binary",
+    "positive": 40925,
+    "negative": 20809,
+    "total": 61734,
+    "positive_pct": 66.29,
+    "ratio": 0.5
+  },
+  "bot_label": {
+    "type": "binary",
+    "positive": 46260,
+    "negative": 15474,
+    "total": 61734,
+    "positive_pct": 74.93,
+    "ratio": 0.3
+  },
+  "tunnel_label": {
+    "type": "binary",
+    "positive": 533,
+    "negative": 61201,
+    "total": 61734,
+    "positive_pct": 0.86,
+    "ratio": 114.8
+  },
+  "_warnings": [
+    "label_bruteforce",
+    "label_malware_dropper",
+    "label_reconnaissance",
+    "label_tunneling",
+    "label_data_exfiltration",
+    "label_destructive",
+    "label_port_scan",
+    "tunnel_label"
+  ],
+  "_total_samples": 61734
+}

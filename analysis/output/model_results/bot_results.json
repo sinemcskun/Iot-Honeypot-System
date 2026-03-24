@@ -1,0 +1,64 @@
+{
+  "task": "Bot Detection",
+  "label": "bot_label",
+  "dummy_demo": {
+    "total": 9260,
+    "positive": 6939,
+    "negative": 2321,
+    "dummy_accuracy": 0.2506,
+    "dummy_recall": 0.0,
+    "explanation": "Dummy classifier (predict all 0): accuracy=25.06% but recall=0.0. With 6939 positive out of 9260, predicting all negative gives misleadingly high accuracy. This is why F1/PR-AUC are used instead."
+  },
+  "models": {
+    "LogisticRegression": {
+      "val_metrics": {
+        "f1_macro": 0.9297,
+        "precision_macro": 0.913,
+        "recall_macro": 0.9516,
+        "roc_auc": 0.9872,
+        "pr_auc": 0.9961
+      },
+      "test_metrics": {
+        "f1_macro": 0.9253,
+        "precision_macro": 0.9079,
+        "recall_macro": 0.9485,
+        "roc_auc": 0.9857,
+        "pr_auc": 0.9957
+      }
+    },
+    "RandomForest": {
+      "val_metrics": {
+        "f1_macro": 0.9934,
+        "precision_macro": 0.9928,
+        "recall_macro": 0.994,
+        "roc_auc": 0.9998,
+        "pr_auc": 0.9999
+      },
+      "test_metrics": {
+        "f1_macro": 0.9903,
+        "precision_macro": 0.9887,
+        "recall_macro": 0.9918,
+        "roc_auc": 0.9997,
+        "pr_auc": 0.9999
+      }
+    },
+    "XGBoost": {
+      "val_metrics": {
+        "f1_macro": 0.9907,
+        "precision_macro": 0.9878,
+        "recall_macro": 0.9937,
+        "roc_auc": 0.9998,
+        "pr_auc": 0.9999
+      },
+      "test_metrics": {
+        "f1_macro": 0.9892,
+        "precision_macro": 0.9851,
+        "recall_macro": 0.9934,
+        "roc_auc": 0.9996,
+        "pr_auc": 0.9999
+      }
+    }
+  },
+  "best_model": "RandomForest",
+  "best_val_f1": 0.9934
+}

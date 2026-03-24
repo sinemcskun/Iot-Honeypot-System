@@ -1,0 +1,19 @@
+# Main project requirements
+# For edge components (Raspberry Pi)
+# See edge/requirements.txt
+
+# For central components (subscriber, database)
+# See central/requirements.txt
+
+# For analysis components (ML, preprocessing, labeling)
+# See analysis/requirements.txt
+
+# For dashboard
+streamlit
+plotly
+
+# Common dependencies
+pandas
+numpy
+pyyaml
+

@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environment
+venv/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Data files (large)
+*.csv
+*.parquet
+*.db
+*.sqlite
+*.sqlite3
+*.jsonl
+
+# Model files
+*.joblib
+*.pkl
+*.pickle
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+academic-source/
+cowrie_responses/
+cowrie_tty_logs/
+
+convert.py
+dashboard.py

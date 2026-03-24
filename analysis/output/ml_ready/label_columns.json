@@ -1,0 +1,15 @@
+[
+  "label_bruteforce",
+  "label_malware_dropper",
+  "label_reconnaissance",
+  "label_lateral_movement",
+  "label_credential_spray",
+  "label_tunneling",
+  "label_data_exfiltration",
+  "label_destructive",
+  "label_port_scan",
+  "label_service_interaction",
+  "label_network_probe",
+  "bot_label",
+  "tunnel_label"
+]
