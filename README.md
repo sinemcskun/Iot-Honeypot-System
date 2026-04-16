@@ -1,5 +1,5 @@
 <div align="center">
-  <h1>🛡️ IoT Honeypot Edge Pipeline</h1>
+  <h1>🛡️ IoT Honeypot Pipeline</h1>
   <p><b>A complete data pipeline & machine learning framework for collecting, analyzing, and deciphering IoT honeypot logs from Cowrie, Honeytrap, and Suricata sensors.</b></p>
 
   <!-- Badges -->
@@ -50,10 +50,10 @@ The system operates across **four core stages**:
                                                 │
                                                 ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│  STAGE 4: LLM DECEPTION PIPELINE (In-Progress)                      │
+│  STAGE 4: LLM DECEPTION PIPELINE (Completed)                         │
 │                                                                     │
-│  parse_cowrie_tty.py ──► generate_synthetic_dataset.py              │
-│       └─► train_phi3_cowrie.py ──► evaluate_phi3_cowrie.py          │
+│  llm/parse_cowrie_tty.py ──► llm/generate_synthetic_dataset.py      │
+│       └─► llm/train_phi3_cowrie.py ──► llm/evaluate_phi3_cowrie.py  │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -71,12 +71,19 @@ The system operates across **four core stages**:
 ├── 📂 analysis/                     # ML session classification pipeline
 │   ├── ml_preparation/              # Leakage checks, imbalanced stats, splits
 │   └── model_training/              # Random Forest, XGBoost, and Logistic Regression
+├── 📂 llm/                          # LLM-powered deception pipeline
+│   ├── 📂 cowrie_tty_logs/          # Raw binary TTY log files (341 files)
+│   ├── 📂 cowrie_responses/         # Cowrie honeyfs, txtcmds, and command handlers
+│   ├── 📂 phi3-cowrie-lora-adapter/ # Fine-tuned LoRA adapter weights
+│   ├── 📜 parse_cowrie_tty.py       # Extracts TTY binary logs into JSONL datasets
+│   ├── 📜 generate_synthetic_dataset.py # Synthesizes realistic terminal responses
+│   ├── 📜 train_phi3_cowrie.py      # LLM fine-tuning using QLoRA (Google Colab T4)
+│   ├── 📜 evaluate_phi3_cowrie.py   # Computes BLEU, ROUGE, Consistency, Hallucination
+│   ├── 📜 fine_tune_dataset.jsonl   # TTY-parsed command-response pairs (275)
+│   ├── 📜 synthetic_finetune_dataset.jsonl  # Synthetic responses
+│   └── 📜 combined_finetune_dataset.jsonl   # Final balanced dataset (365 entries)
 ├── 📂 scripts/                      # Startup bash scripts (e.g., run_all_edge.sh)
-│
-├── 📜 parse_cowrie_tty.py           # Extracts TTY binary logs into JSONL datasets
-├── 📜 generate_synthetic_dataset.py # Supplements raw commands with realistic responses
-├── 📜 train_phi3_cowrie.py          # LLM fine-tuning using QLoRA (Google Colab T4)
-├── 📜 evaluate_phi3_cowrie.py       # Computes metrics (BLEU, Exact Match, AI Refusal)
+├── 📜 Processed_Data.csv            # Preprocessed honeypot event logs (~2 GB)
 └── 📜 requirements.txt              # Core python dependencies
 ```
 *(Note: Visualization dashboard scripts, raw database files, and local logs have been removed or ignored in source control).*
@@ -120,18 +127,18 @@ To mitigate fingerprinting against standard honeypot responses, Stage 4 generate
 1. **Dataset Generation:**
    Parse raw binary TTY files and synthesize responses.
    ```bash
-   python parse_cowrie_tty.py
-   python generate_synthetic_dataset.py
+   python llm/parse_cowrie_tty.py
+   python llm/generate_synthetic_dataset.py
    ```
 2. **Model Fine-Tuning (optimized for Google Colab T4 GPU):**
-   Fine-tunes the `microsoft/Phi-3-mini-4k-instruct` causal language model via 4-bit quantization and LoRA targeting (`phi3-cowrie-lora-adapter`).
+   Fine-tunes the `microsoft/Phi-3-mini-4k-instruct` causal language model via 4-bit quantization and LoRA targeting.
    ```bash
-   python train_phi3_cowrie.py
+   python llm/train_phi3_cowrie.py
    ```
 3. **Model Evaluation:**
-   Local inference evaluating **Exact Match Rate**, **BLEU Scores**, and computing an **AI Refusal Rate** on entirely unseen attacker behaviors.
+   Computes **BLEU**, **ROUGE** (1/2/L), **Consistency Rate**, and **Hallucination Rate** against ground-truth responses.
    ```bash
-   python evaluate_phi3_cowrie.py
+   python llm/evaluate_phi3_cowrie.py
    ```
 
 ---

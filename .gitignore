@@ -17,18 +17,30 @@ venv/
 *.swp
 *.swo
 
-# Data files (large)
-*.csv
-*.parquet
+# Data files (large — regenerable via pipeline)
 *.db
 *.sqlite
 *.sqlite3
+Processed_Data.csv
+Processed_Data_small.csv
 *.jsonl
 
-# Model files
+# Generated output (regenerable)
+analysis/output/session_intelligence.*
+analysis/output/scaler.pkl
+analysis/output/ml_ready/*.parquet
+
+# Model artifacts (regenerable)
 *.joblib
-*.pkl
 *.pickle
+llm/phi3-cowrie-lora-adapter/
+llm/cowrie_tty_logs/
+llm/cowrie_responses/
+
+# Trash (moved files not for public repo)
+trash/
+dashboard.py
+analysis/output/
 
 # OS
 .DS_Store
@@ -37,9 +49,3 @@ Thumbs.db
 # Logs
 *.log
 
-academic-source/
-cowrie_responses/
-cowrie_tty_logs/
-
-convert.py
-dashboard.py

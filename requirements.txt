@@ -1,19 +1,35 @@
-# Main project requirements
-# For edge components (Raspberry Pi)
-# See edge/requirements.txt
+# ============================================================
+# IoT Honeypot Pipeline — Requirements
+# ============================================================
 
-# For central components (subscriber, database)
-# See central/requirements.txt
-
-# For analysis components (ML, preprocessing, labeling)
-# See analysis/requirements.txt
-
-# For dashboard
-streamlit
-plotly
-
-# Common dependencies
+# --- Common ---
 pandas
 numpy
 pyyaml
 
+# --- Edge (MQTT transport) ---
+paho-mqtt
+
+# --- Central (Database) ---
+# (uses stdlib sqlite3)
+
+# --- Analysis (ML pipeline) ---
+scikit-learn
+xgboost
+pyarrow          # parquet read/write
+joblib           # model serialization
+
+# --- Dashboard ---
+streamlit
+plotly
+
+# --- LLM Deception Pipeline (llm/) ---
+torch
+transformers
+peft             # LoRA / QLoRA adapters
+trl              # SFTTrainer
+datasets         # Hugging Face dataset loader
+bitsandbytes     # 4-bit quantization
+nltk             # BLEU score
+rouge-score      # ROUGE metrics
+accelerate       # HF model loading
