@@ -26,10 +26,6 @@ Processed_Data_small.csv
 *.jsonl
 *.json
 
-# Generated output (regenerable)
-analysis/output/session_intelligence.*
-analysis/output/scaler.pkl
-analysis/output/ml_ready/*.parquet
 academic-source/
 
 # Model artifacts (regenerable)
