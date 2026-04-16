@@ -1,11 +1,3 @@
-"""
-Feature Importance Analysis for all trained models.
-Computes and exports feature importances for binary and multi-label tasks.
-
-Usage:
-    python analysis/model_training/feature_importance.py
-"""
-
 import sys
 import json
 import numpy as np
@@ -28,7 +20,6 @@ MIN_SUPERVISED_POSITIVE = 50
 
 
 def _get_importances(model, feature_cols):
-    """Extract feature importances from a fitted model."""
     if hasattr(model, "feature_importances_"):
         return dict(zip(feature_cols, model.feature_importances_.tolist()))
     elif hasattr(model, "coef_"):
@@ -38,12 +29,10 @@ def _get_importances(model, feature_cols):
 
 
 def _sorted_importances(imp_dict):
-    """Sort importances by value descending."""
     return dict(sorted(imp_dict.items(), key=lambda x: x[1], reverse=True))
 
 
 def binary_importances(train, label_col, task_name):
-    """Compute feature importances for a binary task."""
     print(f"\n{'='*60}")
     print(f"  Feature Importance: {task_name}")
     print(f"{'='*60}")
@@ -72,7 +61,6 @@ def binary_importances(train, label_col, task_name):
 
 
 def multilabel_importances(train):
-    """Compute per-label feature importances for multi-label task."""
     print(f"\n{'='*60}")
     print(f"  Feature Importance: Multi-Label Attack")
     print(f"{'='*60}")
@@ -100,7 +88,6 @@ def multilabel_importances(train):
             imp = _get_importances(estimator, FEATURE_COLS)
             label_importances[label] = _sorted_importances(imp)
 
-        # Average importance across all labels
         avg_imp = {}
         for feat in FEATURE_COLS:
             vals = [label_importances[lbl].get(feat, 0) for lbl in eligible]
@@ -121,7 +108,6 @@ def multilabel_importances(train):
                 break
             print(f"  {feat:<30} {val:>14.4f}")
 
-        # Top-3 per label
         print(f"\n  Per-label Top 3:")
         for lbl in eligible:
             short = lbl.replace("label_", "")
@@ -146,7 +132,6 @@ def main():
     tunnel_imp = binary_importances(train, "tunnel_label", "Tunnel Detection")
     ml_imp = multilabel_importances(train)
 
-    # Save all results
     all_results = {
         "feature_columns": FEATURE_COLS,
         "bot_detection": bot_imp,
@@ -164,7 +149,6 @@ def main():
         json.dump(all_results, f, indent=2, ensure_ascii=False, default=str)
     print(f"\n[saved] {output_path}")
 
-    # Summary: dominant feature check
     print(f"\n{'='*60}")
     print(f"  DOMINANT FEATURE CHECK")
     print(f"{'='*60}")

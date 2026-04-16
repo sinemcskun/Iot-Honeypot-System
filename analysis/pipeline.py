@@ -1,10 +1,3 @@
-"""
-Entry point for the Honeypot Behavioral Intelligence Engine.
-
-Usage:
-    python analysis/pipeline.py
-"""
-
 import sys
 import time
 from pathlib import Path

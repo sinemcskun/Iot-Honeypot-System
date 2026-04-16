@@ -27,7 +27,6 @@ def run_case_study(
         print(f"[exfiltration] {total_pos} >= {MIN_POSITIVE}, supervised training is viable.")
         return {"status": "skipped", "reason": "enough positive samples"}
 
-    # Train IsolationForest on negative (non-exfiltration) samples only
     neg_train = train_df[train_df[label_col] == 0][feature_cols].values
     print(f"[exfiltration] IsolationForest: training on {len(neg_train):,} negative samples...")
 

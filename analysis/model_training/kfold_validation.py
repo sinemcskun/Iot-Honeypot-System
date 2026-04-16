@@ -112,7 +112,6 @@ def kfold_multilabel(all_data, feature_cols):
     X = all_data[feature_cols].values
     Y = all_data[eligible].values
 
-    # Stratify on the most balanced label or use a combined key
     strat_key = all_data[eligible[0]].values if eligible else np.zeros(len(all_data))
 
     skf = StratifiedKFold(n_splits=N_SPLITS, shuffle=True, random_state=RANDOM_STATE)
@@ -161,14 +160,12 @@ def run_kfold_all():
 
     all_results = {}
 
-    # Binary tasks
     bot_kfold = kfold_binary(all_data, feature_cols, "bot_label", "Bot Detection")
     all_results["bot_detection"] = bot_kfold
 
     tunnel_kfold = kfold_binary(all_data, feature_cols, "tunnel_label", "Tunnel Detection")
     all_results["tunnel_detection"] = tunnel_kfold
 
-    # Multi-label task
     ml_kfold = kfold_multilabel(all_data, feature_cols)
     all_results["multilabel_attack"] = ml_kfold
 

@@ -143,7 +143,6 @@ class SessionFeatureExtractor:
         )
         return df
 
-    # -- Helper methods --
 
     @staticmethod
     def _entropy(text: str) -> float:

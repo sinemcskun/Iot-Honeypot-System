@@ -1,14 +1,3 @@
-"""
-evaluate_phi3_cowrie.py
-=======================
-Academic evaluation script for the fine-tuned Phi-3 Cowrie SSH honeypot model.
-Runs local inference with 4-bit quantization and calculates:
-  1. BLEU Score          — corpus-level n-gram overlap with ground truth
-  2. ROUGE Scores        — ROUGE-1, ROUGE-2, ROUGE-L F1 overlap
-  3. Consistency Rate    — output stability across repeated inferences
-  4. Hallucination Rate  — ratio of fabricated / non-grounded outputs
-"""
-
 import json
 import os
 import random
@@ -24,17 +13,14 @@ from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
 warnings.filterwarnings("ignore", category=UserWarning)
 
-# ---------------------------------------------------------------------------
-# Configuration
-# ---------------------------------------------------------------------------
 MODEL_NAME = "microsoft/Phi-3-mini-4k-instruct"
 ADAPTER_PATH = "phi3-cowrie-lora-adapter"
 DATASET_PATH = "./combined_finetune_dataset.jsonl"
 
-GROUND_TRUTH_SAMPLES = 30       # samples for BLEU / ROUGE / hallucination
-CONSISTENCY_SAMPLES = 10        # samples for consistency test
-CONSISTENCY_RUNS = 3            # how many times to repeat each prompt
-HALLUCINATION_THRESHOLD = 0.30  # ROUGE-L F1 below this = hallucination
+GROUND_TRUTH_SAMPLES = 30       
+CONSISTENCY_SAMPLES = 10        
+CONSISTENCY_RUNS = 3            
+HALLUCINATION_THRESHOLD = 0.30  
 SEED = 42
 
 MAX_NEW_TOKENS = 128
@@ -54,9 +40,6 @@ SYSTEM_PROMPT = (
 )
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 def build_prompt(instruction: str) -> str:
     return (
         f"{_SYS}\n{SYSTEM_PROMPT}{_END}\n"
@@ -114,11 +97,7 @@ def kv(key: str, val, indent=2):
     print(" " * indent + f"{key:<40s} {val}")
 
 
-# ---------------------------------------------------------------------------
-# Metric: ROUGE scores (per-sample, then averaged)
-# ---------------------------------------------------------------------------
 def compute_rouge(references: list[str], hypotheses: list[str]) -> dict:
-    """Compute average ROUGE-1, ROUGE-2, ROUGE-L F1 scores."""
     scorer = rouge_scorer.RougeScorer(
         ["rouge1", "rouge2", "rougeL"], use_stemmer=True
     )
@@ -136,16 +115,9 @@ def compute_rouge(references: list[str], hypotheses: list[str]) -> dict:
     return averages, per_sample_rougeL
 
 
-# ---------------------------------------------------------------------------
-# Metric: Consistency (repeat same prompt K times, measure agreement)
-# ---------------------------------------------------------------------------
 def compute_consistency(
     model, tokenizer, samples: list[dict], device: str, runs: int = 3
 ) -> float:
-    """
-    For each sample, generate `runs` outputs and measure pairwise exact match.
-    Consistency = (number of fully-consistent samples) / total samples.
-    """
     consistent_count = 0
 
     for i, sample in enumerate(samples, 1):
@@ -167,30 +139,16 @@ def compute_consistency(
     return (consistent_count / len(samples)) * 100 if samples else 0.0
 
 
-# ---------------------------------------------------------------------------
-# Metric: Hallucination Rate (ROUGE-L < threshold = hallucinated)
-# ---------------------------------------------------------------------------
 def compute_hallucination_rate(
     per_sample_rougeL: list[float], threshold: float
 ) -> tuple[float, int]:
-    """
-    A sample is classified as hallucinated if its ROUGE-L F1 score
-    is below the threshold, meaning the generated output has very low
-    overlap with the expected ground truth.
-    """
     hallucinated = sum(1 for s in per_sample_rougeL if s < threshold)
     rate = (hallucinated / len(per_sample_rougeL)) * 100 if per_sample_rougeL else 0.0
     return rate, hallucinated
 
-
-# =============================================================================
-# Main
-# =============================================================================
 def main():
     random.seed(SEED)
     device = "cuda" if torch.cuda.is_available() else "cpu"
-
-    # --- 1. Load model -------------------------------------------------------
     section("1 / 4  Loading Model (4-bit quantised)")
 
     bnb_config = BitsAndBytesConfig(
@@ -215,7 +173,6 @@ def main():
     model = PeftModel.from_pretrained(base_model, ADAPTER_PATH)
     model.eval()
 
-    # --- 2. Ground-Truth Evaluation (BLEU + ROUGE + Hallucination) -----------
     section("2 / 4  Ground-Truth Evaluation (BLEU + ROUGE)")
 
     gt_data = load_jsonl(DATASET_PATH)
@@ -241,26 +198,20 @@ def main():
         references_corpus.append([ref_tokens])
         hypotheses_corpus.append(hyp_tokens)
 
-        # Per-sample BLEU for display
         s_bleu = sentence_bleu([ref_tokens], hyp_tokens, smoothing_function=smoother.method1)
         match_tag = "HIGH" if s_bleu > 0.5 else "LOW "
         print(f"  [{i:>2}/{len(gt_samples)}] [BLEU {s_bleu:.2f} {match_tag}] $ {instruction[:50]}")
-
-    # Corpus BLEU
     bleu_score = corpus_bleu(
         references_corpus, hypotheses_corpus,
         smoothing_function=smoother.method1
     )
 
-    # ROUGE
     rouge_averages, per_sample_rougeL = compute_rouge(references_text, hypotheses_text)
 
-    # Hallucination rate (based on ROUGE-L)
     hallucination_rate, hallucinated_count = compute_hallucination_rate(
         per_sample_rougeL, HALLUCINATION_THRESHOLD
     )
 
-    # --- 3. Consistency Test --------------------------------------------------
     section("3 / 4  Consistency Test")
 
     consistency_samples = random.sample(
@@ -270,7 +221,6 @@ def main():
         model, tokenizer, consistency_samples, device, runs=CONSISTENCY_RUNS
     )
 
-    # --- 4. Final Report ------------------------------------------------------
     section("4 / 4  EVALUATION REPORT")
 
     print("\n  A. BLEU Score")
@@ -295,7 +245,6 @@ def main():
     kv("Hallucinated samples", f"{hallucinated_count} / {len(gt_samples)}")
     kv("Hallucination Rate", f"{hallucination_rate:.1f}%")
 
-    # --- Summary table --------------------------------------------------------
     print("\n  E. Summary")
     print("  " + "-" * 76)
     kv("BLEU", f"{bleu_score:.4f}")

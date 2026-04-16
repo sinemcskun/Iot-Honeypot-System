@@ -1,15 +1,9 @@
-"""
-Data loading and session building.
-"""
-
 import sqlite3
 import numpy as np
 import pandas as pd
 
 
 class Loader:
-    """Loads raw events from the SQLite database."""
-
     def __init__(self, db_path: str, table_name: str = "Preprocessed_Log"):
         self.db_path = db_path
         self.table_name = table_name
@@ -42,8 +36,6 @@ class Loader:
 
 
 class SessionBuilder:
-    """Groups events into sessions by (src_ip, dest_ip) pairs with a time gap threshold."""
-
     def __init__(self, gap_minutes: int = 30):
         self.gap_minutes = gap_minutes
 

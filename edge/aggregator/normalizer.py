@@ -18,12 +18,6 @@ def get_nested(data: Dict, path: str, default=None):
     return val
 
 def _base_preprocessed(log_source: str) -> Dict[str, Any]:
-    '''
-    Base structure for preprocessed logs.
-    Includes metadata about the log source and version.
-    log_source: "cowrie", "honeytrap", "suricata"
-    
-    '''
     return {
         "version": PREPROCESSED_VERSION,
         "log_source": log_source,
@@ -92,12 +86,6 @@ def _map_cowrie_event_type(eventid: Optional[str]) -> str:
     return eventid
 
 def normalize_cowrie_event(raw: Dict[str, Any], honeypot_ip: Optional[str] = None) -> Dict[str, Any]:
-    '''
-    It transforms a raw Cowrie log event into a preprocessed log format.
-    raw: Raw Cowrie log event as a dictionary.
-    honeypot_ip: Optional IP address of the honeypot to set as dest_ip if not present in raw log.
-    '''
-
     doc = _base_preprocessed(log_source="cowrie")
 
     doc["timestamp"] = raw.get("timestamp")

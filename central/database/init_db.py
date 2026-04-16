@@ -1,6 +1,3 @@
-"""
-Database initialization and connection utilities.
-"""
 import sqlite3
 import yaml
 from pathlib import Path
@@ -8,12 +5,6 @@ from typing import Optional
 
 
 def load_config() -> dict:
-    """
-    Load configuration from central_config.yaml.
-    
-    Returns:
-        dict: Configuration dictionary
-    """
     project_root = Path(__file__).resolve().parents[2]
     config_path = project_root / "config" / "central_config.yaml"
     
@@ -25,17 +16,6 @@ def load_config() -> dict:
 
 
 def get_connection(db_path: str, timeout: int = 60) -> sqlite3.Connection:
-    """
-    Get a SQLite database connection.
-    
-    Args:
-        db_path: Path to the SQLite database file
-        timeout: Connection timeout in seconds
-        
-    Returns:
-        sqlite3.Connection: Database connection
-    """
-    # Ensure parent directory exists
     db_file = Path(db_path)
     db_file.parent.mkdir(parents=True, exist_ok=True)
     
@@ -44,13 +24,6 @@ def get_connection(db_path: str, timeout: int = 60) -> sqlite3.Connection:
 
 
 def init_database(db_path: Optional[str] = None, schema_path: Optional[str] = None) -> None:
-    """
-    Initialize the database with schema if it doesn't exist.
-    
-    Args:
-        db_path: Path to database file (if None, uses config)
-        schema_path: Path to schema SQL file (if None, uses default)
-    """
     if db_path is None:
         config = load_config()
         db_path = config["database"]["db_path"]
@@ -73,7 +46,6 @@ def init_database(db_path: Optional[str] = None, schema_path: Optional[str] = No
 
 
 if __name__ == "__main__":
-    # Initialize database when run directly
     init_database()
     print("Database initialized successfully.")
 

@@ -1,4 +1,3 @@
-# Behavioral features used for ML training (leak-free)
 SAFE_FEATURES = [
     "duration_sec",
     "event_count",
@@ -20,14 +19,12 @@ SAFE_FEATURES = [
     "payload_entropy_avg",
     "payload_entropy_max",
     "avg_payload_length",
-    # Derived features (added by ml_pipeline)
     "avg_cmd_per_event",
     "log_duration",
     "log_event_count",
     "entropy_ratio",
 ]
 
-# Rule-based indicators excluded from ML training
 HEURISTIC_FEATURES = [
     "has_download_execute_chain",
     "has_reverse_shell",
@@ -46,27 +43,20 @@ HEURISTIC_FEATURES = [
     "tls_on_non_standard_port",
     "dns_tunnel_indicator",
     "has_default_creds",
-    # --- Data leakage: moved from SAFE_FEATURES ---
-    # Bot detection leakage (automation_score + its components)
     "automation_score",
     "timing_variance_ratio",
     "events_per_minute",
     "cmd_unique_ratio",
     "burst_count",
-    # Port scan label leakage
     "unique_dest_ports",
-    # Brute force label leakage
     "unique_passwords",
     "credential_retry_count",
-    # --- Proxy leakage: moved from SAFE_FEATURES ---
-    # Brute force proxy leakage (label rule uses credential_attempts >= 3)
     "credential_attempts",
-    # Bot detection proxy leakage (timing shortcuts for bot_label)
+    "credential_attempts",
     "avg_inter_cmd_delay",
     "std_inter_cmd_delay",
 ]
 
-# Multi-label attack classification columns (each binary 0/1)
 MULTI_LABEL_COLS = [
     "label_bruteforce",
     "label_malware_dropper",

@@ -1,30 +1,8 @@
-#!/usr/bin/env python3
-"""
-Cowrie TTY Log Parser -> JSONL Dataset Generator
-
-Parses Cowrie honeypot TTY binary log files and converts them into a JSONL
-dataset suitable for fine-tuning LLMs (Llama-3, Phi-3, etc.).
-
-Binary format (per record):
-    op      (4 bytes, uint32 LE) - Operation: 1=Open, 2=Close, 3=Data
-    tty     (4 bytes, uint32 LE) - TTY number
-    size    (4 bytes, uint32 LE) - Payload data length
-    dir     (4 bytes, uint32 LE) - Direction: 2=Output (honeypot), 3=Input (attacker)
-    sec     (4 bytes, uint32 LE) - Timestamp seconds
-    usec    (4 bytes, uint32 LE) - Timestamp microseconds
-    data    (size bytes)         - Payload
-
-Output JSONL format:
-    {"instruction": "<attacker command>", "output": "<honeypot response>"}
-"""
-
 import os
 import re
 import json
 import struct
 import sys
-
-# ─── Configuration ───────────────────────────────────────────────────────────
 
 TTY_LOGS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cowrie_tty_logs")
 OUTPUT_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fine_tune_dataset.jsonl")
@@ -33,45 +11,37 @@ RECORD_HEADER_SIZE = 24  # 6 x 4 bytes
 OP_OPEN = 1
 OP_CLOSE = 2
 OP_DATA = 3
-DIR_OUTPUT = 2   # Honeypot terminal output
-DIR_INPUT = 3    # Attacker keystrokes
+DIR_OUTPUT = 2   
+DIR_INPUT = 3    
 
-# ─── ANSI / Terminal Escape Sequence Cleaning ────────────────────────────────
-
-# Comprehensive regex to strip ANSI escape codes and terminal control sequences
 ANSI_ESCAPE_RE = re.compile(
     r'('
-    r'\x1b'               # ESC character (0x1b)
+    r'\x1b'               
     r'('
-    r'\[[0-?]*[ -/]*[@-~]'   # CSI sequences:  ESC [ ... final_byte
+    r'\[[0-?]*[ -/]*[@-~]'   
     r'|'
-    r'\].*?(?:\x07|\x1b\\)'  # OSC sequences:  ESC ] ... (BEL or ST)
+    r'\].*?(?:\x07|\x1b\\)'  
     r'|'
-    r'[()][AB012]'            # Character set:  ESC ( B, ESC ) 0, etc.
+    r'[()][AB012]'            
     r'|'
-    r'[ -/]*[0-~]'           # Other ESC seqs: ESC <intermediate> <final>
+    r'[ -/]*[0-~]'           
     r')'
     r'|'
-    r'[\x00-\x06\x0e-\x1a\x1c-\x1f]'  # Control chars (keep \x07 BEL, \x08 BS,
-    r'|'                                #   \x09 TAB, \x0a LF, \x0d CR, \x1b ESC)
-    r'\x7f'                             # DEL character
+    r'[\x00-\x06\x0e-\x1a\x1c-\x1f]'  
+    r'|'                                
+    r'\x7f'                             
     r'|'
-    r'\x9b[0-?]*[ -/]*[@-~]'           # 8-bit CSI sequences (C1 control)
+    r'\x9b[0-?]*[ -/]*[@-~]'           
     r')',
     re.DOTALL
 )
 
 
 def strip_ansi(text: str) -> str:
-    """Remove all ANSI escape codes and terminal control characters."""
     return ANSI_ESCAPE_RE.sub('', text)
 
 
 def resolve_backspaces(text: str) -> str:
-    """
-    Process backspace characters (\x08 and \x7f) to reconstruct
-    the final string as it would appear on screen.
-    """
     result = []
     for ch in text:
         if ch in ('\x08', '\x7f'):
@@ -83,35 +53,21 @@ def resolve_backspaces(text: str) -> str:
 
 
 def clean_input(raw: str) -> str:
-    """Clean attacker input: strip ANSI, resolve backspaces, trim whitespace."""
     text = strip_ansi(raw)
     text = resolve_backspaces(text)
-    # Remove trailing CR/LF that comes from pressing Enter
     text = text.strip('\r\n')
     return text.strip()
 
 
 def clean_output(raw: str) -> str:
-    """Clean honeypot output: strip ANSI, normalize whitespace."""
     text = strip_ansi(raw)
-    # Normalize line endings
     text = text.replace('\r\n', '\n').replace('\r', '\n')
-    # Remove leading/trailing whitespace per line and overall
     lines = [line.rstrip() for line in text.split('\n')]
     text = '\n'.join(lines).strip()
     return text
 
 
-# ─── Binary Parser ───────────────────────────────────────────────────────────
-
 def parse_tty_log(filepath: str):
-    """
-    Parse a Cowrie TTY binary log file and yield (direction, data_str) tuples.
-
-    Yields:
-        (dir_code, data_string): DIR_INPUT for attacker input, DIR_OUTPUT for
-                                 honeypot output.
-    """
     try:
         with open(filepath, 'rb') as f:
             data = f.read()
@@ -136,7 +92,6 @@ def parse_tty_log(filepath: str):
                   file=sys.stderr)
             break
 
-        # Sanity checks
         if op not in (OP_OPEN, OP_CLOSE, OP_DATA):
             print(f"  [WARN] Unknown op={op} at offset {offset}, stopping parse.",
                   file=sys.stderr)
@@ -163,27 +118,14 @@ def parse_tty_log(filepath: str):
         offset = payload_end
 
 
-# ─── Command-Response Pairing ────────────────────────────────────────────────
-
 def extract_pairs(filepath: str):
-    """
-    Extract (command, response) pairs from a parsed TTY log.
-
-    Groups consecutive input records into a single command, then matches
-    with the subsequent concatenated output records.
-
-    Yields:
-        (instruction, output): cleaned command and response strings.
-    """
     current_input_parts = []
     current_output_parts = []
-    state = 'IDLE'  # IDLE -> COLLECTING_INPUT -> COLLECTING_OUTPUT
+    state = 'IDLE'  
 
     for direction, payload in parse_tty_log(filepath):
         if direction == DIR_INPUT:
             if state == 'COLLECTING_OUTPUT' and current_input_parts:
-                # We were collecting output and now got new input,
-                # so the previous command-response pair is complete.
                 cmd = clean_input(''.join(current_input_parts))
                 resp = clean_output(''.join(current_output_parts))
                 if cmd and resp:
@@ -196,20 +138,15 @@ def extract_pairs(filepath: str):
 
         elif direction == DIR_OUTPUT:
             if state == 'IDLE' and not current_input_parts:
-                # Output before any input (e.g., MOTD/banner) — skip
                 continue
             current_output_parts.append(payload)
             state = 'COLLECTING_OUTPUT'
-
-    # Flush the last pair
     if current_input_parts:
         cmd = clean_input(''.join(current_input_parts))
         resp = clean_output(''.join(current_output_parts))
         if cmd and resp:
             yield (cmd, resp)
 
-
-# ─── Main ────────────────────────────────────────────────────────────────────
 
 def main():
     if not os.path.isdir(TTY_LOGS_DIR):

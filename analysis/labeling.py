@@ -1,14 +1,8 @@
-"""
-Multi-label attack classification and automation profiling.
-"""
-
 import numpy as np
 import pandas as pd
 
 
 class AttackLabeler:
-    """Assigns 11 multi-label attack labels to each session."""
-
     LABEL_COLS = [
         "label_brute_force", "label_malware_dropper", "label_tunneling",
         "label_lateral_movement", "label_reconnaissance",
@@ -38,7 +32,6 @@ class AttackLabeler:
         destr = df.get("has_destructive", z.copy())
         uports = df.get("unique_dest_ports", z.copy())
 
-        # 7 specific attack labels
         df["label_brute_force"] = ((cred >= 3) & (upwd >= 2)).astype(int)
         df["label_malware_dropper"] = ((chain == 1) | ((dl == 1) & (pers == 1))).astype(int)
         df["label_tunneling"] = ((fwd == 1) | (tls == 1) | (dns_t == 1)).astype(int)
@@ -47,7 +40,6 @@ class AttackLabeler:
         df["label_data_exfiltration"] = (exfil == 1).astype(int)
         df["label_destructive"] = (destr == 1).astype(int)
 
-        # 4 general category labels
         df["label_port_scan"] = (uports >= 3).astype(int)
         df["label_credential_spray"] = ((cred >= 1) & (df["label_brute_force"] == 0)).astype(int)
 
@@ -76,8 +68,6 @@ class AttackLabeler:
 
 
 class AutomationProfiler:
-    """Classifies each session as scripted, manual, or mixed based on behavioral signals."""
-
     def profile(self, df: pd.DataFrame) -> pd.DataFrame:
         df = df.copy()
         print("[AutomationProfiler] Profiling starting...")

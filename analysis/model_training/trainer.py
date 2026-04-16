@@ -49,7 +49,6 @@ MODEL_FACTORY = {
 def train_binary(X_train, y_train, X_val, y_val, model_name: str) -> dict:
     model = MODEL_FACTORY[model_name]()
 
-    # Dynamic scale_pos_weight for XGBoost (balanced class handling)
     if isinstance(model, XGBClassifier):
         neg = int(np.sum(y_train == 0))
         pos = int(np.sum(y_train == 1))

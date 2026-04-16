@@ -24,9 +24,6 @@ from pathlib import Path
 
 import pandas as pd
 
-# ---------------------------------------------------------------------------
-# Configuration
-# ---------------------------------------------------------------------------
 BASE_DIR = Path(__file__).resolve().parent
 COWRIE_DIR = BASE_DIR / "cowrie_responses"
 HONEYFS_DIR = COWRIE_DIR / "honeyfs"
@@ -36,7 +33,6 @@ OUTPUT_PATH = BASE_DIR / "synthetic_finetune_dataset.jsonl"
 COMBINED_OUTPUT_PATH = BASE_DIR / "combined_finetune_dataset.jsonl"
 TTY_DATASET_PATH = BASE_DIR / "fine_tune_dataset.jsonl"
 
-# Cowrie default identity settings (matching uname.py defaults)
 HOSTNAME = "svr04"
 KERNEL_NAME = "Linux"
 KERNEL_VERSION = "3.2.0-4-amd64"
@@ -45,11 +41,7 @@ HARDWARE = "x86_64"
 OPERATING_SYSTEM = "GNU/Linux"
 
 
-# ---------------------------------------------------------------------------
-# Helper: read a local file safely
-# ---------------------------------------------------------------------------
 def _read_file(path: Path) -> str | None:
-    """Read a file with graceful encoding fallback. Returns None on failure."""
     for enc in ("utf-8", "latin-1"):
         try:
             return path.read_text(encoding=enc)
@@ -58,10 +50,6 @@ def _read_file(path: Path) -> str | None:
     return None
 
 
-# ---------------------------------------------------------------------------
-# Virtual files: fake content for paths not physically in honeyfs but known
-# to Cowrie (attackers frequently read these).
-# ---------------------------------------------------------------------------
 VIRTUAL_FILES: dict[str, str] = {
     "/proc/uptime": "3852041.18 7662292.32",
     "/proc/loadavg": "0.08 0.02 0.01 1/120 523",
@@ -71,28 +59,16 @@ VIRTUAL_FILES: dict[str, str] = {
 }
 
 
-# ---------------------------------------------------------------------------
-# Tier 1 — File-reading commands: cat, head, tail
-# ---------------------------------------------------------------------------
 def _handle_file_reader(cmd_name: str, args: list[str]) -> str | None:
-    """
-    Handle `cat`, `head`, `tail` by looking up paths in honeyfs/.
-    Falls back to VIRTUAL_FILES for known paths not in honeyfs.
-    Returns a realistic response string, or None if unhandled.
-    """
-    # Rejoin args and strip redirections first (e.g., "2 > /dev/null")
     raw = " ".join(args)
     raw = re.sub(r'\s*\d+\s*>\s*&?\S*', '', raw)   # 2>/dev/null, 2>&1
     raw = re.sub(r'\s*>\s*>?\s*\S+', '', raw)       # > file, >> file
     raw = raw.strip()
-
-    # Re-split after redirection removal
     try:
         cleaned_args = shlex.split(raw)
     except ValueError:
         cleaned_args = raw.split()
 
-    # Strip flags (e.g. -n 10) and collect file paths
     file_args: list[str] = []
     skip_next = False
     for i, a in enumerate(cleaned_args):
@@ -100,21 +76,18 @@ def _handle_file_reader(cmd_name: str, args: list[str]) -> str | None:
             skip_next = False
             continue
         if a.startswith("-"):
-            # Some flags take a value (e.g. head -n 5)
             if a in ("-n", "-c"):
                 skip_next = True
             continue
-        # Skip bare numeric args (leftover FD numbers from "2 > /dev/null")
         if a.isdigit():
             continue
         file_args.append(a)
 
     if not file_args:
-        return None  # no file path -> can't simulate
+        return None  
 
     outputs: list[str] = []
     for fpath in file_args:
-        # Normalise: remove leading / and map to honeyfs
         rel = fpath.lstrip("/")
         local = HONEYFS_DIR / rel
         if local.is_file():
@@ -131,22 +104,15 @@ def _handle_file_reader(cmd_name: str, args: list[str]) -> str | None:
     return "\n".join(outputs)
 
 
-# ---------------------------------------------------------------------------
-# Tier 2 — Static txtcmds lookup
-# ---------------------------------------------------------------------------
-# Build a map of command basenames → txtcmds file paths.
-# txtcmds directory structure mirrors /bin, /usr/bin, etc.
 _TXTCMDS_MAP: dict[str, Path] = {}
 
 
 def _build_txtcmds_map() -> None:
-    """Walk txtcmds/ and map command basenames to their content files."""
     if not TXTCMDS_DIR.is_dir():
         return
     for p in TXTCMDS_DIR.rglob("*"):
         if p.is_file():
             _TXTCMDS_MAP[p.name] = p
-            # Also register full Unix path (e.g. /usr/bin/lscpu)
             rel = p.relative_to(TXTCMDS_DIR).as_posix()
             _TXTCMDS_MAP["/" + rel] = p
 
@@ -155,7 +121,6 @@ _build_txtcmds_map()
 
 
 def _handle_txtcmd(base_cmd: str) -> str | None:
-    """Return static txtcmd output if the command exists in txtcmds/."""
     path = _TXTCMDS_MAP.get(base_cmd)
     if path is None:
         return None
@@ -165,27 +130,14 @@ def _handle_txtcmd(base_cmd: str) -> str | None:
     return None
 
 
-# ---------------------------------------------------------------------------
-# Tier 3 — Dynamic / fallback responses (hardcoded, mimicking Cowrie logic)
-# ---------------------------------------------------------------------------
-# These responses are derived from reading the actual Python command modules
-# in cowrie_responses/commands/*.py and the honeyfs fake files.
-
-# Pre-load commonly referenced honeyfs files for dynamic responses
 _CPUINFO = _read_file(HONEYFS_DIR / "proc" / "cpuinfo") or ""
 _MEMINFO = _read_file(HONEYFS_DIR / "proc" / "meminfo") or ""
 _PASSWD = _read_file(HONEYFS_DIR / "etc" / "passwd") or ""
 _SHADOW = _read_file(HONEYFS_DIR / "etc" / "shadow") or ""
-
-# Uptime value (Cowrie returns seconds since "boot")
 _UPTIME_SECONDS = "3852041.18 7662292.32"
 
 
 def _uname_response(args: list[str]) -> str:
-    """
-    Simulate `uname` with the same flag-parsing logic as Cowrie's uname.py.
-    Supports -a, -s, -n, -r, -v, -m, -p, -i, -o and combined flags.
-    """
     if not args:
         return KERNEL_NAME
 
@@ -222,7 +174,6 @@ def _uname_response(args: list[str]) -> str:
                         opts[k] = True
                 elif key:
                     opts[key] = True
-        # Positional args (like "2" in "uname -m 2") are silently ignored
 
     parts: list[str] = []
     if opts["name"]:
@@ -243,7 +194,6 @@ def _uname_response(args: list[str]) -> str:
 
 
 def _ifconfig_response() -> str:
-    """Static ifconfig output matching Cowrie style."""
     return (
         "eth0      Link encap:Ethernet  HWaddr aa:bb:cc:dd:ee:ff\n"
         "          inet addr:192.168.1.10  Bcast:192.168.1.255  Mask:255.255.255.0\n"
@@ -267,8 +217,6 @@ def _ifconfig_response() -> str:
 
 
 def _free_response(args: list[str]) -> str:
-    """Simulate `free` output. Supports -m and -h flags."""
-    # Based on honeyfs/proc/meminfo values
     fmt = "kb"
     for a in args:
         if "-m" in a:
@@ -297,7 +245,6 @@ def _free_response(args: list[str]) -> str:
 
 
 def _w_response() -> str:
-    """Simulate the `w` command."""
     return (
         " 14:32:07 up 44 days, 13:40,  1 user,  load average: 0.08, 0.02, 0.01\n"
         "USER     TTY      FROM              LOGIN@   IDLE   JCPU   PCPU WHAT\n"
@@ -306,7 +253,6 @@ def _w_response() -> str:
 
 
 def _uptime_response() -> str:
-    """Simulate `uptime` output."""
     return " 14:32:07 up 44 days, 13:40,  1 user,  load average: 0.08, 0.02, 0.01"
 
 
@@ -315,7 +261,6 @@ def _whoami_response() -> str:
 
 
 def _last_response() -> str:
-    """Simulate `last` output (Cowrie's last.py returns a simple table)."""
     return (
         "root     pts/0        192.168.1.100    Wed Mar 12 14:31   still logged in\n"
         "root     pts/0        192.168.1.50     Tue Mar 11 09:22 - 11:45  (02:23)\n"
@@ -326,7 +271,6 @@ def _last_response() -> str:
 
 
 def _ping_response(args: list[str]) -> str:
-    """Simulate `ping` with 3 pings (Cowrie generates random ttl/ms)."""
     host = ""
     for a in args:
         if not a.startswith("-"):
@@ -339,7 +283,6 @@ def _ping_response(args: list[str]) -> str:
             "            [-M mtu discovery hint] [-S sndbuf]\n"
             "            [ -T timestamp option ] [ -Q tos ] [hop1 ...] destination"
         )
-    # Generate a deterministic fake IP from the hostname
     ip = "93.184.216.34"
     return (
         f"PING {host} ({ip}) 56(84) bytes of data.\n"
@@ -354,7 +297,6 @@ def _ping_response(args: list[str]) -> str:
 
 
 def _ps_response(args: list[str]) -> str:
-    """Simulate `ps` output. Always shows a few fake processes."""
     if any("ef" in a or "aux" in a for a in args):
         return (
             "UID        PID  PPID  C STIME TTY          TIME CMD\n"
@@ -372,8 +314,6 @@ def _ps_response(args: list[str]) -> str:
 
 
 def _ls_response(args: list[str]) -> str:
-    """Simulate `ls`. Basic directory listing of honeyfs root."""
-    # We just return a plausible listing; real Cowrie uses fs.pickle
     has_la = any("-l" in a or "-a" in a for a in args)
     if has_la:
         return (
@@ -387,10 +327,7 @@ def _ls_response(args: list[str]) -> str:
     return ".bash_history  .bashrc  .profile"
 
 
-# Master fallback dictionary: base command name → handler or static string.
-# All handlers accept (args: list[str]) and return str.
 DYNAMIC_RESPONSES: dict[str, str | callable] = {
-    # --- System info ---
     "uname": lambda args: _uname_response(args),
     "hostname": HOSTNAME,
     "whoami": "root",
@@ -420,7 +357,6 @@ DYNAMIC_RESPONSES: dict[str, str | callable] = {
     ),
     "nproc": "2",
 
-    # --- Network ---
     "ifconfig": _ifconfig_response(),
     "netstat": (
         "Active Internet connections (servers and established)\n"
@@ -431,16 +367,13 @@ DYNAMIC_RESPONSES: dict[str, str | callable] = {
     ),
     "ping": lambda args: _ping_response(args),
 
-    # --- File system ---
     "ls": lambda args: _ls_response(args),
     "pwd": "/root",
-    "cd": "",  # silent success
-    "mkdir": "",  # silent success
+    "cd": "",  
+    "mkdir": "",  
     "which": lambda args: f"/usr/bin/{args[0]}" if args else "",
     "locate": lambda args: f"-bash: locate: command not found" if not args else "",
     "find": "",
-
-    # --- Process management ---
     "ps": lambda args: _ps_response(args),
     "kill": "",
     "pkill": "",
@@ -448,40 +381,34 @@ DYNAMIC_RESPONSES: dict[str, str | callable] = {
     "sleep": "",
     "crontab": lambda args: "no crontab for root" if any("-l" in a for a in args) else "",
 
-    # --- File manipulation (silent success / deceptive) ---
-    "rm": "",  # Cowrie silently "deletes" files
+    "rm": "",  
     "cp": "",
     "mv": "",
-    "chmod": "",  # silent success (Cowrie's chmod.py does nothing)
+    "chmod": "",  
     "chown": "",
     "chattr": "",
     "lockr": "-bash: lockr: command not found",
     "touch": "",
     "tee": "",
 
-    # --- User management ---
     "adduser": "",
     "chpasswd": "",
     "passwd": "passwd: password updated successfully",
     "groups": "root",
 
-    # --- Downloaders (Cowrie fakes download activity) ---
     "wget": lambda args: _wget_response(args),
     "curl": lambda args: _curl_response(args),
     "tftp": "",
     "ftpget": "",
     "scp": "",
 
-    # --- Shells / scripting ---
     "bash": "",
     "sh": "",
-    "export": "",  # sets env vars silently
+    "export": "",  
     "source": "",
     "eval": "",
-
-    # --- Text / data processing ---
     "echo": lambda args: " ".join(args).strip('"').strip("'"),
-    "cat": None,  # handled by Tier 1 (file reader)
+    "cat": None,  
     "head": None,
     "tail": None,
     "grep": "",
@@ -494,21 +421,17 @@ DYNAMIC_RESPONSES: dict[str, str | callable] = {
     "tr": "",
     "base64": "",
 
-    # --- Package managers (Cowrie fakes installations) ---
     "apt": "Reading package lists... Done",
     "apt-get": "Reading package lists... Done",
     "yum": "",
     "pip": "",
-
-    # --- System services ---
     "service": "",
     "systemctl": "",
     "iptables": "",
 
-    # --- Misc ---
     "free": lambda args: _free_response(args),
-    "top": None,   # handled by txtcmds
-    "df": None,    # handled by txtcmds
+    "top": None,   
+    "df": None,    
     "du": "",
     "tar": "",
     "unzip": "",
@@ -519,7 +442,6 @@ DYNAMIC_RESPONSES: dict[str, str | callable] = {
 
 
 def _wget_response(args: list[str]) -> str:
-    """Simulate Cowrie's wget response: show connection + save output."""
     url = ""
     for a in args:
         if a.startswith("http://") or a.startswith("https://") or a.startswith("ftp://"):
@@ -534,7 +456,6 @@ def _wget_response(args: list[str]) -> str:
             "Usage: wget [OPTION]... [URL]..."
         )
 
-    # Extract hostname from URL
     host = url.split("//")[-1].split("/")[0].split(":")[0] if "//" in url else url.split("/")[0]
     filename = url.rstrip("/").split("/")[-1] or "index.html"
 
@@ -553,7 +474,6 @@ def _wget_response(args: list[str]) -> str:
 
 
 def _curl_response(args: list[str]) -> str:
-    """Simulate Cowrie's curl response."""
     url = ""
     for a in args:
         if a.startswith("http://") or a.startswith("https://") or a.startswith("ftp://"):
@@ -572,14 +492,7 @@ def _curl_response(args: list[str]) -> str:
     )
 
 
-# ---------------------------------------------------------------------------
-# Core engine
-# ---------------------------------------------------------------------------
 def _safe_split(cmd_str: str) -> tuple[str, list[str]]:
-    """
-    Split a command string into (base_command, args).
-    Uses shlex for robust parsing; falls back to simple split on failure.
-    """
     cmd_str = cmd_str.strip()
     try:
         parts = shlex.split(cmd_str)
@@ -592,15 +505,6 @@ def _safe_split(cmd_str: str) -> tuple[str, list[str]]:
 
 
 def get_cowrie_response(command: str) -> str | None:
-    """
-    Core engine: determine what Cowrie would respond to the given command.
-
-    Resolution order:
-      1. File-readers (cat, head, tail) → honeyfs lookup
-      2. Static txtcmds → verbatim file content
-      3. Dynamic / fallback → hardcoded dictionary
-    Returns None if the command cannot be simulated.
-    """
     command = command.strip()
     if not command:
         return None
@@ -609,37 +513,28 @@ def get_cowrie_response(command: str) -> str | None:
     if not base_cmd:
         return None
 
-    # ---------- Tier 1: File readers ----------
     if base_cmd in ("cat", "head", "tail"):
         result = _handle_file_reader(base_cmd, args)
         if result is not None:
             return result
-        # If no file paths parsed, fall through to other tiers
-
-    # ---------- Tier 2: Static txtcmds ----------
     txtcmd_result = _handle_txtcmd(base_cmd)
     if txtcmd_result is not None:
         return txtcmd_result
 
-    # ---------- Tier 3: Dynamic / fallback ----------
     handler = DYNAMIC_RESPONSES.get(base_cmd)
     if handler is None:
-        # Check if the full path form is known (e.g. /usr/bin/wget)
         full_cmd = command.split()[0] if command.split() else ""
         handler = DYNAMIC_RESPONSES.get(os.path.basename(full_cmd))
 
     if handler is not None:
         if callable(handler):
             return handler(args)
-        return handler  # static string
+        return handler  
 
-    # ---------- Unknown command ----------
     return f"-bash: {base_cmd}: command not found"
 
 
 def _strip_redirections(cmd: str) -> str:
-    """Remove shell redirections from a command string."""
-    # 2>&1, 2>/dev/null, >/dev/null, >> file, etc.
     cmd = re.sub(r'\s*\d*>\s*&\d+', '', cmd)
     cmd = re.sub(r'\s*\d*>\s*>?\s*/\S+', '', cmd)
     cmd = re.sub(r'\s*\d*>\s*>?\s*\S+', '', cmd)
@@ -647,12 +542,7 @@ def _strip_redirections(cmd: str) -> str:
 
 
 def _extract_subshell_commands(text: str) -> list[str]:
-    """
-    Extract commands from $(...) subshell captures in a string.
-    Returns a flat list of commands found inside subshells.
-    """
     cmds: list[str] = []
-    # Find balanced $(...) — simple approach for single-level nesting
     i = 0
     while i < len(text):
         idx = text.find('$(', i)
@@ -668,7 +558,6 @@ def _extract_subshell_commands(text: str) -> list[str]:
                 if depth == 0:
                     inner = text[start:j].strip()
                     if inner:
-                        # Inner may itself contain pipes/chains — take first cmd
                         first = inner.split('|')[0].strip()
                         first = re.split(r'\s*(?:&&|;)\s*', first)[0].strip()
                         first = _strip_redirections(first)
@@ -682,18 +571,9 @@ def _extract_subshell_commands(text: str) -> list[str]:
 
 
 def handle_chained_command(full_command: str) -> str | None:
-    """
-    Handle chained commands separated by ; or &&.
-    Pipes (|) are processed by keeping only the leftmost command.
-    Redirections (>, >>, 2>, 2>&1) are stripped.
-    Subshells ($(...)) are recursively processed.
-    """
     full_command = full_command.strip()
     if not full_command:
         return None
-
-    # Split on ; and &&  (but not inside quoted strings)
-    # Simple heuristic: split on these delimiters outside quotes
     sub_commands = re.split(r'\s*(?:&&|;)\s*', full_command)
 
     outputs: list[str] = []
@@ -702,18 +582,14 @@ def handle_chained_command(full_command: str) -> str | None:
         if not sub:
             continue
 
-        # Handle pipes: only process the leftmost command
         if "|" in sub:
             sub = sub.split("|")[0].strip()
 
-        # Strip output redirections
         sub = _strip_redirections(sub)
         if not sub:
             continue
 
-        # Handle variable assignments (VAR=value or VAR=$(cmd))
         if re.match(r'^[A-Za-z_]\w*=', sub):
-            # Extract any $() subshell commands inside the assignment
             subcmds = _extract_subshell_commands(sub)
             for sc in subcmds:
                 result = get_cowrie_response(sc)
@@ -721,8 +597,6 @@ def handle_chained_command(full_command: str) -> str | None:
                     outputs.append(result)
             continue
 
-        # Handle $() subshells embedded in a command (e.g., echo "$var")
-        # Process the top-level command itself
         result = get_cowrie_response(sub)
         if result is not None and result != "":
             outputs.append(result)
@@ -732,18 +606,11 @@ def handle_chained_command(full_command: str) -> str | None:
     return "\n".join(outputs)
 
 
-# ---------------------------------------------------------------------------
-# Extra event generators
-# ---------------------------------------------------------------------------
 import random
 import re as _re
 
 
 def _parse_login_failed_entries(df: "pd.DataFrame") -> list[dict[str, str]]:
-    """
-    Convert ssh_login_failed rows into instruction-output pairs.
-    Format: login attempt [user/pass] failed  ->  simulate 'su <user>' or 'login <user>' denial.
-    """
     entries: list[dict[str, str]] = []
     mask = (df["source_cowrie"] == 1) & (df["event_type"] == "ssh_login_failed")
     rows = df.loc[mask, "request_data"].dropna()
@@ -760,7 +627,6 @@ def _parse_login_failed_entries(df: "pd.DataFrame") -> list[dict[str, str]]:
             continue
         seen.add(key)
 
-        # Instruction: simulate attacker trying 'su <user>' after login
         instruction = f"su {username}"
         output = f"Password: \nsu: Authentication failure"
         entries.append({"instruction": instruction, "output": output})
@@ -768,10 +634,6 @@ def _parse_login_failed_entries(df: "pd.DataFrame") -> list[dict[str, str]]:
 
 
 def _parse_file_download_entries(df: "pd.DataFrame") -> list[dict[str, str]]:
-    """
-    Convert ssh_file_downloaded rows into wget/curl instruction-output pairs.
-    Extracts URL from the raw JSON field.
-    """
     entries: list[dict[str, str]] = []
     mask = (df["source_cowrie"] == 1) & (df["event_type"] == "ssh_file_downloaded")
     rows_raw = df.loc[mask, "raw"].dropna()
@@ -792,7 +654,6 @@ def _parse_file_download_entries(df: "pd.DataFrame") -> list[dict[str, str]]:
             continue
         seen_urls.add(url)
 
-        # Alternate between wget and curl
         use_wget = len(seen_urls) % 2 == 0
         if use_wget:
             instruction = f"wget {url} -O /tmp/{outfile}"
@@ -816,15 +677,10 @@ def _parse_file_download_entries(df: "pd.DataFrame") -> list[dict[str, str]]:
     return entries
 
 
-# ---------------------------------------------------------------------------
-# Main pipeline
-# ---------------------------------------------------------------------------
 def main() -> None:
     print("=" * 60)
     print("Synthetic Cowrie Dataset Generator — Extended")
     print("=" * 60)
-
-    # --- Step 1: Read CSV ---
     print(f"\n[1/5] Reading CSV: {CSV_PATH.name}")
     try:
         df = pd.read_csv(
@@ -837,14 +693,13 @@ def main() -> None:
         print(f"ERROR: Failed to read CSV: {e}")
         sys.exit(1)
 
-    # --- Step 2: Commands (ALL unique, no cap) ---
     print(f"\n[2/5] Generating command entries (no limit)...")
     mask = (df["source_cowrie"] == 1) & (
         df["event_type"].str.contains("command", case=False, na=False)
     )
     cowrie_cmds = df.loc[mask, "request_data"].dropna()
     cmd_counts = cowrie_cmds.value_counts()
-    unique_cmds = cmd_counts.index.tolist()  # ALL unique commands — no [:500] cap
+    unique_cmds = cmd_counts.index.tolist()
 
     print(f"  -> Total Cowrie command rows: {len(cowrie_cmds):,}")
     print(f"  -> Unique commands to process: {len(unique_cmds):,}")
@@ -870,23 +725,17 @@ def main() -> None:
             print(f"  -> Processed {i}/{len(unique_cmds)} commands...", end="\r")
     print(f"\n  -> Command entries: {len(cmd_entries):,}  (skipped {skipped})")
 
-    # Write synthetic dataset (commands only, for backward compat)
     with open(OUTPUT_PATH, "w", encoding="utf-8") as f:
         for entry in cmd_entries:
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
     print(f"  -> Wrote {OUTPUT_PATH.name}: {len(cmd_entries):,} lines")
-
-    # --- Step 3: File download entries ---
     print(f"\n[3/5] Generating file-download entries (ssh_file_downloaded)...")
     dl_entries = _parse_file_download_entries(df)
     print(f"  -> File-download entries: {len(dl_entries):,}")
 
-    # --- Step 4: Login-failed entries ---
     print(f"\n[4/5] Generating login-failed entries (ssh_login_failed)...")
     login_entries = _parse_login_failed_entries(df)
     print(f"  -> Login-failed entries: {len(login_entries):,}")
-
-    # --- Step 5: Merge sources + write combined ---
     print(f"\n[5/5] Merging all sources -> {COMBINED_OUTPUT_PATH.name}")
     tty_entries: list[dict[str, str]] = []
     if TTY_DATASET_PATH.exists():
@@ -902,10 +751,8 @@ def main() -> None:
     else:
         print(f"  -> {TTY_DATASET_PATH.name} not found, skipping TTY data.")
 
-    # Combine: commands + downloads + login-failed + TTY logs
     all_entries = cmd_entries + dl_entries + login_entries + tty_entries
 
-    # Deduplicate by instruction key
     seen_instructions: set[str] = set()
     deduped: list[dict[str, str]] = []
     for entry in all_entries:
@@ -920,7 +767,6 @@ def main() -> None:
 
     combined_size = COMBINED_OUTPUT_PATH.stat().st_size
 
-    # --- Summary ---
     print("\n" + "=" * 60)
     print("SUMMARY")
     print("=" * 60)

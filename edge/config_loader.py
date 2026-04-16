@@ -4,19 +4,6 @@ from pathlib import Path
 
 
 def load_config(path: str) -> dict:
-    """
-    Load configuration from YAML file.
-    
-    Args:
-        path: Path to the YAML configuration file
-        
-    Returns:
-        dict: Configuration dictionary
-        
-    Raises:
-        FileNotFoundError: If config file doesn't exist
-        yaml.YAMLError: If YAML parsing fails
-    """
     config_path = Path(path)
     if not config_path.exists():
         raise FileNotFoundError(f"Config file not found: {path}")
