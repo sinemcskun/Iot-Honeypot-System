@@ -24,6 +24,7 @@ venv/
 Processed_Data.csv
 Processed_Data_small.csv
 *.jsonl
+*.json
 
 # Generated output (regenerable)
 analysis/output/session_intelligence.*
