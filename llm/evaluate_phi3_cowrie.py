@@ -43,10 +43,6 @@ from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
 warnings.filterwarnings("ignore", category=UserWarning)
 
-# ═══════════════════════════════════════════════════════════════════════════
-#  PATHS
-# ═══════════════════════════════════════════════════════════════════════════
-
 BASE_DIR     = Path(__file__).resolve().parent
 MODEL_NAME   = "microsoft/Phi-3-mini-4k-instruct"
 ADAPTER_PATH = str(BASE_DIR / "phi3-cowrie-lora-adapter")
@@ -69,34 +65,21 @@ CKPT_DIR.mkdir(parents=True, exist_ok=True)
 if HF_CACHE_DIR:
     Path(HF_CACHE_DIR).mkdir(parents=True, exist_ok=True)
 
-# ═══════════════════════════════════════════════════════════════════════════
-#  HYPERPARAMETERS
-# ═══════════════════════════════════════════════════════════════════════════
 
-# Tek eşik — rescale_with_baseline=True ile CodeBERT F1 ~[0.0, 0.7] bandına iner.
-# F1 >= THRESHOLD → faithful / clean
-# F1 <  THRESHOLD → semantic hallucination
-# Gri bölge yok: her örnek kesin olarak bir kategoride.
-# İlk çalıştırma sonrası dağılımı görüp 0.40–0.50 arasında ayarlayın.
 THRESHOLD               = 0.45
 HALLUCINATION_THRESHOLD = THRESHOLD
 CONSISTENCY_THRESHOLD   = THRESHOLD
 
-ENGAGEMENT_FACTOR  = 0.20   # Artık kullanılmıyor — AEI direkt quality çarpanı kullanır
+ENGAGEMENT_FACTOR  = 0.20   # Artık kullanılmıyor
 AEI_SESSION_SAMPLE = 999_999
 SEED               = 42
 MAX_NEW_TOKENS     = 128
 TEMPERATURE        = 0.1
 DO_SAMPLE          = True
-BATCH_SIZE         = 4        # A100/V100→32, T4→8
+BATCH_SIZE         = 4
 CSV_CHUNK_SIZE     = 500_000
 
-# ── Deneysel koşullar ────────────────────────────────────────────────────
 CONDITIONS = ["base_model", "lora_finetuned", "lora_finetuned_domain_roberta", "lora_hallucinated_prompt"]
-
-# ═══════════════════════════════════════════════════════════════════════════
-#  LEAKAGE REGEX
-# ═══════════════════════════════════════════════════════════════════════════
 
 LEAKAGE_PATTERNS = [
     r"I (cannot|can't|am unable|will not|won't)",
@@ -110,10 +93,6 @@ LEAKAGE_PATTERNS = [
     r"I should (mention|clarify|point out)",
 ]
 _LEAKAGE_RE = re.compile("|".join(LEAKAGE_PATTERNS), re.IGNORECASE)
-
-# ═══════════════════════════════════════════════════════════════════════════
-#  CHAT TOKENS
-# ═══════════════════════════════════════════════════════════════════════════
 
 _SYS  = "\x3c|system|\x3e"
 _USR  = "\x3c|user|\x3e"
@@ -134,11 +113,6 @@ HALLUCINATED_SYSTEM_PROMPT = (
 )
 
 _BERT_DEVICE: str = "cuda"
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-#  CHECKPOINT HELPERS
-# ═══════════════════════════════════════════════════════════════════════════
 
 def _ckpt_path(name: str) -> Path:
     return CKPT_DIR / f"{name}.json"
@@ -174,11 +148,6 @@ def load_checkpoint(name: str, expected_dataset_size: int = 0):
     print(f"  ✔ Checkpoint loaded ← {path}")
     return payload["data"]
 
-
-# ═══════════════════════════════════════════════════════════════════════════
-#  PROMPT / CLEAN
-# ═══════════════════════════════════════════════════════════════════════════
-
 def build_prompt(instruction: str, sys_prompt: str = None) -> str:
     sp = sys_prompt if sys_prompt is not None else SYSTEM_PROMPT
     return (f"{_SYS}\n{sp}{_END}\n"
@@ -191,13 +160,6 @@ def clean_output(raw: str, prompt: str) -> str:
     for tok in [_END, _ASST, _USR, _SYS, "\x3c/s\x3e", "\x3cs\x3e"]:
         text = text.replace(tok, "")
     return text.strip()
-
-
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-#  DATA LOADING
-# ═══════════════════════════════════════════════════════════════════════════
 
 def load_jsonl(path: str) -> list:
     rows = []
@@ -272,10 +234,6 @@ def _fallback_sessions(n: int) -> list:
     return sessions
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-#  GENERATION  (batch — truncation YOK)
-# ═══════════════════════════════════════════════════════════════════════════
-
 @torch.no_grad()
 def generate_batch(model, tokenizer, prompts: list, device: str) -> list:
     enc = tokenizer(prompts, return_tensors="pt", padding=True, truncation=True, max_length=3072).to(device)
@@ -299,10 +257,6 @@ def generate_batch(model, tokenizer, prompts: list, device: str) -> list:
     
     return [clean_output(txt, "") for txt in decoded]
 
-
-# ═══════════════════════════════════════════════════════════════════════════
-#  BERTSCORE  (boş yanıt filtreli)
-# ═══════════════════════════════════════════════════════════════════════════
 
 def has_leakage(text: str) -> bool:
     return bool(_LEAKAGE_RE.search(text))
@@ -349,10 +303,6 @@ def bertscore_subset(per_f1: list, indices: list) -> dict:
     return {"f1": round(sum(vals) / len(vals), 4), "n": len(vals)}
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-#  HALLUCINATION / CONSISTENCY
-# ═══════════════════════════════════════════════════════════════════════════
-
 def compute_hallucination(hypotheses: list, per_f1: list,
                            threshold: float) -> dict:
     sem_fail  = [i for i, f in enumerate(per_f1)       if f < threshold]
@@ -389,11 +339,6 @@ def compute_fidelity(per_f1: list, hypotheses: list, threshold: float) -> dict:
         "total_samples":         n,
         "fidelity_rate_pct":     round(faithful / n * 100, 2) if n else 0.0,
     }
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-#  AEI
-# ═══════════════════════════════════════════════════════════════════════════
 
 def _aei_aggregate(session_results: list) -> dict:
     if not session_results:
@@ -444,7 +389,6 @@ def compute_aei_for_condition(
                     for e in gt_data
                     if e.get("instruction") and e.get("output")}
 
-    # Bu koşulda hangi instruction'lar leakage içeriyor?
     instr_to_hyp = dict(zip(instructions, condition_hypotheses))
     hall_cmds    = {instr for instr, hyp in instr_to_hyp.items()
                     if has_leakage(hyp)}
@@ -459,7 +403,6 @@ def compute_aei_for_condition(
         print(f"  [{condition_name}] AEI base resumed: "
               f"{len(per_session_base)} sessions")
     else:
-        # ── Adım 1: prompt & ref topla ──────────────────────────────────
         print(f"\n  [{condition_name}] {len(cowrie_sessions)} session "
               f"işleniyor (batch BERTScore)...")
 
@@ -497,7 +440,6 @@ def compute_aei_for_condition(
                     pending_refs.append(ref)
                     meta["items"].append(("gen", p_idx))
 
-        # ── Adım 2: Dataset dışı komutlar için generation ───────────────
         SAVE_EVERY    = 500
         gen_ckpt_name = f"aei_partial_{condition_name}"
         gen_ckpt      = load_checkpoint(gen_ckpt_name,
@@ -526,7 +468,6 @@ def compute_aei_for_condition(
                                      "total": len(pending_prompts)},
                                     dataset_size=dataset_size)
 
-        # ── Adım 3: Tüm (hyp, ref) çiftlerini düzleştir ─────────────────
         all_hyps_flat: list = []
         all_refs_flat: list = []
         ptr_map:       list = []
@@ -545,7 +486,6 @@ def compute_aei_for_condition(
                 ptrs.append(len(all_hyps_flat) - 1)
             ptr_map.append(ptrs)
 
-        # ── Adım 4: Toplu BERTScore (boş yanıt filtreli + CHUNK YENİ) ───
         print(f"\n  [{condition_name}] BERTScore "
               f"({len(all_hyps_flat)} komut, bulk)...")
         f1_scores: list = [None] * len(all_hyps_flat)
@@ -589,7 +529,6 @@ def compute_aei_for_condition(
             print(f"  ⚠ [{condition_name}] {skipped} boş yanıt "
                   f"quality hesabından çıkarıldı.")
 
-        # ── Adım 5: Session bazlı quality ortalaması ─────────────────────
         per_session_base = []
         for s_meta, ptrs in zip(session_meta, ptr_map):
             if s_meta["skip"]:
@@ -598,8 +537,6 @@ def compute_aei_for_condition(
             q_scores = []
             for p in ptrs:
                 if p < len(f1_scores) and f1_scores[p] is not None:
-                    # DÜZELTME: Eğer yanıt "AI Leakage" içeriyorsa, BERTScore
-                    # yüksek bile olsa o komutun kalitesi simülasyon için 0'dır.
                     if has_leakage(all_hyps_flat[p]):
                         q_scores.append(0.0)
                     else:
@@ -621,11 +558,6 @@ def compute_aei_for_condition(
 
         save_checkpoint(ckpt_name, per_session_base, dataset_size=dataset_size)
 
-    # ── AEI Hesaplama ────────────────────────────────────────────────────
-    # llm_cmd_count = cowrie_cmd_count * (1 + avg_quality)
-    # Mantık: quality=1.0 → saldırgan Cowrie'deki kadar EK komut girer (2x),
-    #         quality=0.0 → LLM hiç fark yaratmaz (AEI=1.0),
-    #         quality=0.5 → %50 daha fazla komut (AEI=1.5)
     all_r = []; hall_r = []; clean_r = []
     
     for s in per_session_base:
@@ -635,8 +567,6 @@ def compute_aei_for_condition(
         d_cmd        = llm_cmd - s["cowrie_cmd_count"]
         d_dur        = llm_dur - s["cowrie_duration"]
         
-        # AEI = LLM Süresi / Cowrie Süresi (Tutunma Çarpanı)
-        # quality=0 → AEI=1.0 (fark yok), quality=1 → AEI=2.0 (2x daha uzun)
         aei = (llm_dur / s["cowrie_duration"]) if s["cowrie_duration"] > 0 else 1.0
         
         row = {
@@ -662,10 +592,6 @@ def compute_aei_for_condition(
 
     return aei_sens, aei_sub, per_session_base
 
-
-# ═══════════════════════════════════════════════════════════════════════════
-#  PRINT HELPERS
-# ═══════════════════════════════════════════════════════════════════════════
 
 def hline(char="=", width=80): print(char * width)
 def section(title):            print(); hline(); print(f"  {title}"); hline()
@@ -803,9 +729,6 @@ def print_comparison_table(results: dict) -> None:
     print()
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-#  MAIN
-# ═══════════════════════════════════════════════════════════════════════════
 
 def main():
     global _BERT_DEVICE
@@ -817,7 +740,6 @@ def main():
     print(f"  Device               : {device}")
     print(f"  Conditions           : {CONDITIONS}")
 
-    # ── 1 / 3  Dataset ────────────────────────────────────────────────────
     section("1 / 3  Loading Dataset")
 
     gt_data    = load_jsonl(DATASET_PATH)
@@ -825,13 +747,10 @@ def main():
     ds_size    = len(gt_samples)
     print(f"  Dataset size: {ds_size} entries")
 
-    # ── 2 / 3  Cowrie Sessions ────────────────────────────────────────────
     section("2 / 3  Loading Cowrie Sessions")
     print(f"  CSV: {CSV_PATH}")
     cowrie_sessions = load_cowrie_sessions(CSV_PATH, max_sessions=AEI_SESSION_SAMPLE)
     print(f"  {len(cowrie_sessions)} session yüklendi.")
-
-    # ── 3 / 3  Per-Condition: Load → Generate → Evaluate ─────────────────
     section("3 / 3  Per-Condition Evaluation")
 
     all_results: dict = {}
@@ -866,12 +785,11 @@ def main():
             llm_cname = cname
             bert_path = "/content/drive/MyDrive/roberta-large"
 
-        # ── Model Setup ───────────────────────────────────────────────────
         if llm_cname == "lora_finetuned":
             if base_model.__class__.__name__ != "PeftModel":
                 print(f"  [{cname}] Applying LoRA adapter → {ADAPTER_PATH}")
                 model = PeftModel.from_pretrained(base_model, ADAPTER_PATH)
-                base_model = model  # Store wrapped model so we don't wrap twice
+                base_model = model  
             else:
                 print(f"  [{cname}] LoRA adapter already applied.")
                 model = base_model
@@ -879,7 +797,6 @@ def main():
             model = base_model
         model.eval()
 
-        # ── Generation ────────────────────────────────────────────────────
         print(f"\n  [{cname}] Generation...")
         ckpt_gen_name = f"generation_{cname}" if cname == "lora_hallucinated_prompt" else f"generation_{llm_cname}"
         ckpt_gen = load_checkpoint(ckpt_gen_name, expected_dataset_size=ds_size)
@@ -923,7 +840,6 @@ def main():
                 print(f"    - Leak?: {has_leakage(hypotheses[idx])}")
             print()
 
-        # ── BERTScore ─────────────────────────────────────────────────────
         ckpt_bert = load_checkpoint(f"bertscore_{cname}",
                                      expected_dataset_size=ds_size)
         if ckpt_bert is not None:
@@ -938,7 +854,6 @@ def main():
         hall_r  = compute_hallucination(hypotheses, per_f1, HALLUCINATION_THRESHOLD)
         fid_r   = compute_fidelity(per_f1, hypotheses, CONSISTENCY_THRESHOLD)
 
-        # ── AEI ───────────────────────────────────────────────────────────
         print(f"\n  [{cname}] AEI hesaplanıyor...")
         aei_sens, aei_sub, per_sess = compute_aei_for_condition(
             model, tokenizer, device,
@@ -972,7 +887,6 @@ def main():
                                fid=all_results[cname]["fidelity"],
                                aei_sens=aei_sens, aei_sub=aei_sub)
 
-        # ── Free VRAM ─────────────────────────────────────────────────────
         del model
         torch.cuda.empty_cache()
         print(f"  [{cname}] Model reference released, VRAM cache cleared.")
@@ -980,7 +894,6 @@ def main():
     del base_model, tokenizer
     torch.cuda.empty_cache()
 
-    # ── Karşılaştırma & JSON ──────────────────────────────────────────────
     print_comparison_table(all_results)
 
     output_data = {
