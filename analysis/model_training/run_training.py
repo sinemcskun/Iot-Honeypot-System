@@ -1,5 +1,6 @@
 import sys
 import json
+import joblib
 import numpy as np
 import pandas as pd
 from pathlib import Path
@@ -55,6 +56,7 @@ def run_binary_task(train, val, test, label_col: str, task_name: str) -> dict:
 
     results = {"task": task_name, "label": label_col, "dummy_demo": dummy, "models": {}}
     best_model = None
+    best_model_obj = None
     best_f1 = -1
 
     for model_name in MODEL_FACTORY:
@@ -78,10 +80,18 @@ def run_binary_task(train, val, test, label_col: str, task_name: str) -> dict:
         if val_metrics["f1_macro"] > best_f1:
             best_f1 = val_metrics["f1_macro"]
             best_model = model_name
+            best_model_obj = out["model"]
 
     results["best_model"] = best_model
     results["best_val_f1"] = best_f1
     print(f"\n  BEST: {best_model} (val F1={best_f1:.4f})")
+
+    model_filename = f"{task_name.lower().replace(' ', '_')}_best_model.joblib"
+    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+    joblib.dump(best_model_obj, RESULTS_DIR / model_filename)
+    results["model_file"] = model_filename
+    print(f"  SAVED: {model_filename}")
+
     return results
 
 
@@ -121,6 +131,7 @@ def run_multilabel_task(train, val, test) -> dict:
         "models": {},
     }
     best_model = None
+    best_model_obj = None
     best_f1 = -1
 
     for model_name in MODEL_FACTORY:
@@ -149,10 +160,17 @@ def run_multilabel_task(train, val, test) -> dict:
         if val_metrics["macro"]["f1_macro"] > best_f1:
             best_f1 = val_metrics["macro"]["f1_macro"]
             best_model = model_name
+            best_model_obj = out["model"]
 
     results["best_model"] = best_model
     results["best_val_macro_f1"] = best_f1
     print(f"\n  BEST: {best_model} (val macro-F1={best_f1:.4f})")
+
+    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+    joblib.dump(best_model_obj, RESULTS_DIR / "multilabel_best_model.joblib")
+    results["model_file"] = "multilabel_best_model.joblib"
+    print(f"  SAVED: multilabel_best_model.joblib")
+
     return results
 
 
