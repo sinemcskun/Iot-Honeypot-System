@@ -117,7 +117,7 @@ export default function OverviewTab() {
       {/* KPI Row */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginBottom: 24 }}>
         <StatCard icon={Activity} label="Total Events Captured" value={stats?.totalEvents.toLocaleString() ?? "—"} sub="Dec 2025 – Jan 2026" color="#ef4444" />
-        <StatCard icon={Globe} label="Identified Sessions" value={(stats?.totalSessions ?? 0).toLocaleString()} sub={`SSH ${(stats?.cowrieSessions ?? 0).toLocaleString()} · Net ${(stats?.suricataSessions ?? 0).toLocaleString()} · Svc ${(stats?.honeytrapSessions ?? 0).toLocaleString()}`} color="#3b82f6" />
+        <StatCard icon={Globe} label="Identified Sessions" value={(stats?.totalSessions ?? 0).toLocaleString()} sub={`Cowrie ${(stats?.cowrieSessions ?? 0).toLocaleString()} · Suricata ${(stats?.suricataSessions ?? 0).toLocaleString()} · Honeytrap ${(stats?.honeytrapSessions ?? 0).toLocaleString()}`} color="#3b82f6" />
         <StatCard icon={Cpu} label="Bot vs Manual Ratio" value={`${stats?.botRatioPct ?? 78.5}% Bot`} sub="From ML classification" color="#f59e0b" />
         <StatCard icon={Server} label="Honeypot Sources" value="3 Active" sub="Cowrie · Honeytrap · Suricata" color="#22c55e" />
       </div>

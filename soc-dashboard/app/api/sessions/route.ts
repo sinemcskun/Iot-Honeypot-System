@@ -28,7 +28,7 @@ export async function GET(request: Request) {
       params.push(`%${search}%`, `%${search}%`);
     }
 
-    query += " GROUP BY session_id ORDER BY start_time DESC LIMIT ?";
+    query += " GROUP BY session_id ORDER BY event_count DESC LIMIT ?";
     params.push(limit);
 
     const sessions = db.prepare(query).all(...params);

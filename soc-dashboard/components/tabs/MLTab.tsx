@@ -254,6 +254,50 @@ const FEATURE_LABELS: Record<string, string> = {
 const ALL_FEATURES = FEATURE_GROUPS.flatMap(g => g.keys);
 const EMPTY_FEATURES = Object.fromEntries(ALL_FEATURES.map(k => [k, ""]));
 
+// Real sessions from DB — feature values computed by infer.py
+const PRESETS: { label: string; color: string; session: string; desc: string; features: Record<string, number> }[] = [
+  {
+    label: "Credential Attack", color: "#ef4444", session: "17438eb4d8a7",
+    desc: "Heavy login attempts → Credential Spray + Lateral Movement",
+    features: {"duration_sec":56.78,"event_count":25,"min_inter_cmd_delay":0.089,"max_inter_cmd_delay":12.899,"cmd_count":25,"cmd_unique_count":25,"cmd_entropy":4.644,"cmd_avg_length":39.56,"cmd_max_length":82,"port_range_span":2200,"has_sensitive_ports":1,"protocol_count":1,"dns_query_count":0,"dns_avg_query_length":0,"http_unique_uris":0,"unique_usernames":1,"password_entropy_avg":2.611,"payload_entropy_avg":4.157,"payload_entropy_max":4.636,"avg_payload_length":39.56,"avg_cmd_per_event":1.0,"log_duration":4.057,"log_event_count":3.258,"entropy_ratio":1.117},
+  },
+  {
+    label: "Multi-Stage Attack", color: "#f59e0b", session: "f63d714e46d2",
+    desc: "Recon + Brute Force + Tunneling detected together",
+    features: {"duration_sec":29.45,"event_count":63,"min_inter_cmd_delay":0.001,"max_inter_cmd_delay":12.218,"cmd_count":45,"cmd_unique_count":45,"cmd_entropy":5.492,"cmd_avg_length":84.58,"cmd_max_length":485,"port_range_span":2200,"has_sensitive_ports":1,"protocol_count":1,"dns_query_count":0,"dns_avg_query_length":0,"http_unique_uris":0,"unique_usernames":1,"password_entropy_avg":1.585,"payload_entropy_avg":4.122,"payload_entropy_max":5.978,"avg_payload_length":84.58,"avg_cmd_per_event":0.714,"log_duration":3.416,"log_event_count":4.159,"entropy_ratio":1.332},
+  },
+  {
+    label: "Port Forwarding", color: "#a855f7", session: "1fe89e283518",
+    desc: "SSH port forward requests — wide port range span",
+    features: {"duration_sec":29.11,"event_count":28,"min_inter_cmd_delay":0.001,"max_inter_cmd_delay":6.169,"cmd_count":14,"cmd_unique_count":14,"cmd_entropy":3.807,"cmd_avg_length":454.43,"cmd_max_length":1900,"port_range_span":2200,"has_sensitive_ports":1,"protocol_count":1,"dns_query_count":0,"dns_avg_query_length":0,"http_unique_uris":0,"unique_usernames":1,"password_entropy_avg":3.97,"payload_entropy_avg":4.247,"payload_entropy_max":4.815,"avg_payload_length":454.43,"avg_cmd_per_event":0.5,"log_duration":3.405,"log_event_count":3.367,"entropy_ratio":0.896},
+  },
+  {
+    label: "Quick Bot Probe", color: "#22c55e", session: "001837376a6c",
+    desc: "Fast automated probe — very short duration, hex-encoded checks",
+    features: {"duration_sec":2.04,"event_count":16,"min_inter_cmd_delay":0.001,"max_inter_cmd_delay":0.846,"cmd_count":7,"cmd_unique_count":7,"cmd_entropy":2.807,"cmd_avg_length":53.71,"cmd_max_length":118,"port_range_span":2200,"has_sensitive_ports":1,"protocol_count":1,"dns_query_count":0,"dns_avg_query_length":0,"http_unique_uris":0,"unique_usernames":1,"password_entropy_avg":2.0,"payload_entropy_avg":4.182,"payload_entropy_max":4.867,"avg_payload_length":53.71,"avg_cmd_per_event":0.438,"log_duration":1.112,"log_event_count":2.833,"entropy_ratio":0.671},
+  },
+];
+
+// Derived from BOT_FEATURE_IMPORTANCE (RandomForest) + TUNNEL_FEATURE_IMPORTANCE (XGBoost)
+const FEATURE_IMPACT: Record<string, { tier: "critical" | "high" | "medium"; model: string; hint: string }> = {
+  payload_entropy_max: { tier: "critical", model: "Tunnel",  hint: "#1 tunnel feature · XGB 37.9%" },
+  avg_cmd_per_event:   { tier: "critical", model: "Bot",     hint: "#1 bot feature · RF 13.6%" },
+  cmd_avg_length:      { tier: "high",     model: "Both",    hint: "Bot RF 9.4% · Tunnel XGB 13.6%" },
+  cmd_unique_count:    { tier: "high",     model: "Both",    hint: "Bot RF 9.1% · Tunnel XGB 9.4%" },
+  payload_entropy_avg: { tier: "high",     model: "Tunnel",  hint: "Tunnel XGB 8.3%" },
+  cmd_max_length:      { tier: "high",     model: "Tunnel",  hint: "Tunnel RF 15.8%" },
+  avg_payload_length:  { tier: "high",     model: "Tunnel",  hint: "Tunnel RF 9.6%" },
+  cmd_count:           { tier: "high",     model: "Bot",     hint: "Bot RF 8.0%" },
+  min_inter_cmd_delay: { tier: "medium",   model: "Bot",     hint: "Bot RF 7.0%" },
+  max_inter_cmd_delay: { tier: "medium",   model: "Bot",     hint: "Bot RF 6.5%" },
+};
+
+const IMPACT_STYLE = {
+  critical: { border: "1.5px solid #ef4444", bg: "rgba(239,68,68,0.06)", dot: "#ef4444",  label: "#fca5a5" },
+  high:     { border: "1.5px solid #f59e0b", bg: "rgba(245,158,11,0.06)", dot: "#f59e0b", label: "#fcd34d" },
+  medium:   { border: "1.5px solid #60a5fa", bg: "rgba(96,165,250,0.05)", dot: "#60a5fa", label: "#93c5fd" },
+} as const;
+
 interface AttackType { name: string; probability: number; }
 interface Predictions {
   bot:          { probability: number; label: string };
@@ -286,11 +330,38 @@ function MLPredictor() {
   const [loadingPredict, setLoadingPredict] = useState(false);
   const [error, setError]               = useState<string | null>(null);
   const [sessionLoaded, setSessionLoaded] = useState<string | null>(null);
+  const [activePreset, setActivePreset] = useState<string | null>(null);
+
+  const loadPreset = useCallback(async (preset: typeof PRESETS[0]) => {
+    setActivePreset(preset.label);
+    setSessionLoaded(null);
+    setError(null);
+    const filled = Object.fromEntries(
+      ALL_FEATURES.map(k => [k, preset.features[k] != null ? String(Number(preset.features[k]).toFixed(4)) : "0"])
+    );
+    setFeatures(filled);
+    setLoadingPredict(true);
+    try {
+      const r = await fetch("/api/predict", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ features: preset.features }),
+      });
+      const data = await r.json();
+      if (!r.ok || data.error) throw new Error(data.error ?? "Prediction failed");
+      setPredictions(data.predictions);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setLoadingPredict(false);
+    }
+  }, []);
 
   const loadSession = useCallback(async () => {
     const id = sessionInput.trim();
     if (!id) return;
     setLoadingSession(true);
+    setActivePreset(null);
     setError(null);
     setPredictions(null);
     try {
@@ -366,6 +437,47 @@ function MLPredictor() {
         </button>
       </div>
 
+      {/* Scenario presets */}
+      <div style={{ marginBottom: 20 }}>
+        <div style={{ fontSize: 10, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>
+          Quick Scenarios — real DB sessions, auto-predict on click
+        </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {PRESETS.map(preset => {
+            const isActive = activePreset === preset.label;
+            return (
+              <button
+                key={preset.label}
+                onClick={() => loadPreset(preset)}
+                disabled={loadingPredict || loadingSession}
+                title={`Session: ${preset.session}\n${preset.desc}`}
+                style={{
+                  padding: "7px 16px",
+                  background: isActive ? `${preset.color}22` : "rgba(255,255,255,0.03)",
+                  border: `1px solid ${isActive ? preset.color : preset.color + "55"}`,
+                  borderRadius: 6,
+                  color: isActive ? preset.color : preset.color + "bb",
+                  fontSize: 12,
+                  fontWeight: isActive ? 700 : 500,
+                  cursor: "pointer",
+                  transition: "all 0.15s",
+                }}
+              >
+                {preset.label}
+              </button>
+            );
+          })}
+        </div>
+        {activePreset && (
+          <div style={{ marginTop: 6, fontSize: 11, color: "var(--text-muted)", fontStyle: "italic" }}>
+            {PRESETS.find(p => p.label === activePreset)?.desc}
+            <span style={{ marginLeft: 8, fontFamily: "monospace", color: "var(--text-secondary)", fontStyle: "normal" }}>
+              ({PRESETS.find(p => p.label === activePreset)?.session})
+            </span>
+          </div>
+        )}
+      </div>
+
       {sessionLoaded && (
         <div style={{ marginBottom: 12, fontSize: 11, color: "#4ade80" }}>
           ✓ Session <code style={{ color: "#60a5fa" }}>{sessionLoaded}</code> loaded — features auto-filled. Edit any value then click Re-Predict.
@@ -378,6 +490,17 @@ function MLPredictor() {
         </div>
       )}
 
+      {/* Impact legend */}
+      <div style={{ display: "flex", gap: 16, marginBottom: 12, flexWrap: "wrap" }}>
+        {([["critical","#ef4444","Top feature (model driver)"],["high","#f59e0b","High impact"],["medium","#60a5fa","Medium impact"]] as const).map(([tier, color, desc]) => (
+          <div key={tier} style={{ display: "flex", alignItems: "center", gap: 5 }}>
+            <span style={{ width: 8, height: 8, borderRadius: "50%", background: color, display: "inline-block" }} />
+            <span style={{ fontSize: 10, color: "var(--text-secondary)" }}>{desc}</span>
+          </div>
+        ))}
+        <span style={{ fontSize: 10, color: "var(--text-secondary)", marginLeft: 4 }}>— hover any highlighted field for details</span>
+      </div>
+
       {/* Feature inputs */}
       <div style={{ display: "flex", flexDirection: "column", gap: 16, marginBottom: 20 }}>
         {FEATURE_GROUPS.map(group => (
@@ -386,23 +509,42 @@ function MLPredictor() {
               {group.title}
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
-              {group.keys.map(key => (
-                <div key={key}>
-                  <div style={{ fontSize: 10, color: "var(--text-secondary)", marginBottom: 3 }}>{FEATURE_LABELS[key]}</div>
-                  <input
-                    type="number"
-                    step="any"
-                    value={features[key]}
-                    onChange={e => setFeatures(prev => ({ ...prev, [key]: e.target.value }))}
-                    style={{
-                      width: "100%", boxSizing: "border-box",
-                      background: "var(--bg-card-hover)", border: "1px solid var(--border)",
-                      borderRadius: 4, padding: "5px 8px", fontSize: 11,
-                      color: "var(--text-primary)", outline: "none", fontFamily: "monospace",
-                    }}
-                  />
-                </div>
-              ))}
+              {group.keys.map(key => {
+                const impact = FEATURE_IMPACT[key];
+                const style  = impact ? IMPACT_STYLE[impact.tier] : null;
+                return (
+                  <div key={key} title={impact ? impact.hint : undefined}
+                    style={{ background: style?.bg ?? "transparent", borderRadius: 5, padding: style ? "5px 6px" : 0 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 3 }}>
+                      {style && <span style={{ width: 6, height: 6, borderRadius: "50%", background: style.dot, flexShrink: 0, display: "inline-block" }} />}
+                      <span style={{ fontSize: 10, color: style ? style.label : "var(--text-secondary)", fontWeight: style ? 600 : 400 }}>
+                        {FEATURE_LABELS[key]}
+                      </span>
+                      {impact && (
+                        <span style={{
+                          fontSize: 9, padding: "1px 4px", borderRadius: 3, marginLeft: "auto", flexShrink: 0,
+                          background: style!.bg, border: `1px solid ${style!.dot}`, color: style!.dot, fontWeight: 700,
+                        }}>
+                          {impact.model}
+                        </span>
+                      )}
+                    </div>
+                    <input
+                      type="number"
+                      step="any"
+                      value={features[key]}
+                      onChange={e => setFeatures(prev => ({ ...prev, [key]: e.target.value }))}
+                      style={{
+                        width: "100%", boxSizing: "border-box",
+                        background: "var(--bg-card-hover)",
+                        border: style ? style.border : "1px solid var(--border)",
+                        borderRadius: 4, padding: "5px 8px", fontSize: 11,
+                        color: "var(--text-primary)", outline: "none", fontFamily: "monospace",
+                      }}
+                    />
+                  </div>
+                );
+              })}
             </div>
           </div>
         ))}

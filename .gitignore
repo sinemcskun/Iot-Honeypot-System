@@ -25,6 +25,12 @@ Processed_Data.csv
 Processed_Data_small.csv
 *.jsonl
 *.json
+# Allow specific JSON files needed by the dashboard
+!llm/llm_evaluation_results.json
+!llm/llm_evaluation_results_v3.json
+!soc-dashboard/public/world-110m.json
+!soc-dashboard/package-lock.json
+!soc-dashboard/tsconfig.json
 
 academic-source/
 

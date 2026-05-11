@@ -1,143 +1,207 @@
 """
-finetune_roberta_cowrie.py
-──────────────────────────────────────────────────────────────────────────────
-Phase 3: RoBERTa Fine-tuning for Domain-Aware Scoring
+finetune_roberta_cowrie.py  —  Phase 3: Domain-Aware RoBERTa Scorer
+─────────────────────────────────────────────────────────────────────
+Fine-tunes RoBERTa-large with LoRA adapters for Masked Language Modeling
+on Cowrie terminal command/response pairs.  The resulting model is used
+as the BERTScore reference encoder in evaluate_phi3_cowrie_v3.py under
+the "lora_finetuned_domain_roberta" condition.
 
-Bu script:
-- combined_finetune_dataset.jsonl dosyasını okur (instruction + output).
-- Metinleri birleştirerek MLM (Masked Language Modeling) formatında hazırlar.
-- Lokaldeki roberta-large modeline LoRA (query, value, r=8, alpha=16) uygular.
-- HuggingFace Trainer ile eğitir.
-- Adaptörü ./roberta-cowrie-lora/ içine kaydeder.
-- Son olarak adaptörü baz modelle birleştirir ve ./roberta-cowrie-merged/ içine
-  kaydeder ki BERTScore fonksiyonu direkt bu yoldan modeli yükleyebilsin.
-──────────────────────────────────────────────────────────────────────────────
+Pipeline:
+  1. Load combined_finetune_dataset.jsonl
+  2. Tokenize and apply dynamic 15% MLM masking
+  3. Fine-tune RoBERTa-large with LoRA (r=8, α=16)
+  4. Save LoRA adapter  → roberta-cowrie-lora/
+  5. Merge + save full model → roberta-cowrie-merged/
+
+Install (Colab cell):
+  !pip install -q peft transformers accelerate bitsandbytes datasets
+  from google.colab import drive; drive.mount('/content/drive')
 """
 
 import json
-import torch
+import os
+import random
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, Dict, List
+
+import torch
+from peft import LoraConfig, TaskType, get_peft_model
+from torch.utils.data import DataLoader, Dataset
 from transformers import (
-    AutoTokenizer,
     AutoModelForMaskedLM,
+    AutoTokenizer,
     DataCollatorForLanguageModeling,
     Trainer,
-    TrainingArguments
+    TrainingArguments,
 )
-from peft import LoraConfig, get_peft_model
-from datasets import Dataset
 
-# ═══════════════════════════════════════════════════════════════════════════
-#  PATHS
-# ═══════════════════════════════════════════════════════════════════════════
-BASE_DIR       = Path(__file__).resolve().parent
-DATASET_PATH   = BASE_DIR / "combined_finetune_dataset.jsonl"
-ROBERTA_PATH   = "/content/drive/MyDrive/roberta-large"
-OUTPUT_ADAPTER = BASE_DIR / "roberta-cowrie-lora"
-OUTPUT_MERGED  = BASE_DIR / "roberta-cowrie-merged"
-OUTPUT_TRAIN   = BASE_DIR / "roberta-cowrie-training"
+# ────────────────────────────────  PATHS  ────────────────────────────────────
+BASE_DIR     = Path(__file__).resolve().parent
+MODEL_NAME   = "roberta-large"
+DATASET_PATH = str(BASE_DIR / "combined_finetune_dataset.jsonl")
+ADAPTER_OUT  = str(BASE_DIR / "roberta-cowrie-lora")
+MERGED_OUT   = str(BASE_DIR / "roberta-cowrie-merged")
 
-def load_data() -> Dataset:
-    texts = []
-    with open(DATASET_PATH, "r", encoding="utf-8") as f:
-        for line in f:
+# ──────────────────────────  HYPERPARAMETERS  ────────────────────────────────
+LORA_R            = 8
+LORA_ALPHA        = 16
+LORA_DROPOUT      = 0.05
+LORA_TARGET       = ["query", "value"]   # RoBERTa attention modules
+
+MLM_PROBABILITY   = 0.15
+MAX_SEQ_LENGTH    = 128
+BATCH_SIZE        = 16
+LEARNING_RATE     = 2e-4
+NUM_EPOCHS        = 3
+WARMUP_RATIO      = 0.06
+WEIGHT_DECAY      = 0.01
+SEED              = 42
+
+DRIVE_CKPT = Path("/content/drive/MyDrive/roberta_cowrie_checkpoints")
+LOCAL_CKPT = Path("/content/roberta_checkpoints")
+CKPT_DIR   = DRIVE_CKPT if Path("/content/drive/MyDrive").exists() else LOCAL_CKPT
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  DATA
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def load_texts(jsonl_path: str) -> List[str]:
+    """
+    Extract free-form text from the finetune dataset.
+    Each entry is expected to have 'instruction' and 'output' fields.
+    Both are concatenated as: "<instruction> [SEP] <output>"
+    """
+    texts: List[str] = []
+    with open(jsonl_path, "r", encoding="utf-8") as fh:
+        for line in fh:
             line = line.strip()
             if not line:
                 continue
-            data = json.loads(line)
-            instr = data.get("instruction", "").strip()
-            out = data.get("output", "").strip()
-            
-            # MLM için instruction ve output'u arka arkaya ekliyoruz
-            # Böylece model Cowrie terminal çıktılarına ve Linux komutlarına aşina olur
-            text_pair = f"{instr}\n{out}"
-            texts.append(text_pair)
-            
-    return Dataset.from_dict({"text": texts})
+            try:
+                entry = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+
+            instr  = str(entry.get("instruction", "")).strip()
+            output = str(entry.get("output",      "")).strip()
+            if instr or output:
+                texts.append(f"{instr} [SEP] {output}")
+
+    print(f"  Loaded {len(texts)} text samples from {jsonl_path}")
+    return texts
+
+
+class CowrieMLMDataset(Dataset):
+    def __init__(self, encodings):
+        self.encodings = encodings
+
+    def __len__(self):
+        return len(self.encodings["input_ids"])
+
+    def __getitem__(self, idx) -> Dict[str, torch.Tensor]:
+        return {key: torch.tensor(val[idx]) for key, val in self.encodings.items()}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  MAIN
+# ═══════════════════════════════════════════════════════════════════════════════
 
 def main():
-    print(f"\n[1/5] Loading tokenizer from {ROBERTA_PATH}...")
-    tokenizer = AutoTokenizer.from_pretrained(ROBERTA_PATH)
+    random.seed(SEED)
+    torch.manual_seed(SEED)
+    CKPT_DIR.mkdir(parents=True, exist_ok=True)
 
-    print("[2/5] Preparing dataset...")
-    dataset = load_data()
-    print(f"      Loaded {len(dataset)} samples.")
-    
-    def tokenize_function(examples):
-        return tokenizer(
-            examples["text"],
-            truncation=True,
-            padding="max_length",
-            max_length=512,
-            return_special_tokens_mask=True
-        )
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    print(f"\n  Device: {device}")
+    print(f"  Checkpoint dir: {CKPT_DIR}\n")
 
-    tokenized_datasets = dataset.map(
-        tokenize_function, 
-        batched=True, 
-        remove_columns=["text"],
-        desc="Tokenizing dataset"
+    # ── 1. Tokenizer ──────────────────────────────────────────────────────────
+    print("  Loading tokenizer...")
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+
+    # ── 2. Data ───────────────────────────────────────────────────────────────
+    texts = load_texts(DATASET_PATH)
+    if not texts:
+        raise RuntimeError(f"No samples found in {DATASET_PATH}")
+
+    print("  Tokenizing...")
+    encodings = tokenizer(
+        texts,
+        truncation=True,
+        padding="max_length",
+        max_length=MAX_SEQ_LENGTH,
+        return_special_tokens_mask=True,
     )
+    dataset = CowrieMLMDataset(encodings)
 
-    print(f"\n[3/5] Loading Base Model for MLM from {ROBERTA_PATH}...")
-    model = AutoModelForMaskedLM.from_pretrained(ROBERTA_PATH)
-
-    print("\n      Applying LoRA (target_modules: query, value; r=8; alpha=16)...")
-    lora_config = LoraConfig(
-        r=8,
-        lora_alpha=16,
-        target_modules=["query", "value"],
-        lora_dropout=0.05,
-        bias="none",
-        task_type=None  # MLM is standard feature extraction for PEFT
-    )
-    
-    model = get_peft_model(model, lora_config)
-    model.print_trainable_parameters()
-
-    # MLM Veri Toplayıcı (Data Collator) - %15 maskeleme oranı
     data_collator = DataCollatorForLanguageModeling(
         tokenizer=tokenizer,
         mlm=True,
-        mlm_probability=0.15
+        mlm_probability=MLM_PROBABILITY,
     )
 
-    print("\n[4/5] Training...")
+    # ── 3. Model + LoRA ───────────────────────────────────────────────────────
+    print("  Loading RoBERTa-large...")
+    base_model = AutoModelForMaskedLM.from_pretrained(MODEL_NAME)
+
+    lora_config = LoraConfig(
+        task_type=TaskType.TOKEN_CLS,   # closest fit for MLM
+        r=LORA_R,
+        lora_alpha=LORA_ALPHA,
+        lora_dropout=LORA_DROPOUT,
+        target_modules=LORA_TARGET,
+        bias="none",
+    )
+
+    model = get_peft_model(base_model, lora_config)
+    model.print_trainable_parameters()
+
+    # ── 4. Training ───────────────────────────────────────────────────────────
     training_args = TrainingArguments(
-        output_dir=str(OUTPUT_TRAIN),
-        #overwrite_output_dir=True,
-        num_train_epochs=3,
-        per_device_train_batch_size=8,
-        save_steps=500,
-        save_total_limit=2,
-        logging_steps=50,
-        learning_rate=5e-4,
-        fp16=torch.cuda.is_available(),
-        report_to="none" # wandb vs kapatmak icin
+        output_dir=str(CKPT_DIR),
+        num_train_epochs=NUM_EPOCHS,
+        per_device_train_batch_size=BATCH_SIZE,
+        learning_rate=LEARNING_RATE,
+        warmup_ratio=WARMUP_RATIO,
+        weight_decay=WEIGHT_DECAY,
+        save_strategy="epoch",
+        logging_steps=20,
+        fp16=(device == "cuda"),
+        dataloader_num_workers=0,
+        report_to="none",
+        seed=SEED,
     )
 
     trainer = Trainer(
         model=model,
         args=training_args,
+        train_dataset=dataset,
         data_collator=data_collator,
-        train_dataset=tokenized_datasets,
+        tokenizer=tokenizer,
     )
 
+    print("\n  Starting LoRA fine-tuning...")
     trainer.train()
 
-    print(f"\n[5/5] Saving Models...")
-    print(f"      Saving adapter only to: {OUTPUT_ADAPTER}")
-    model.save_pretrained(str(OUTPUT_ADAPTER))
-    tokenizer.save_pretrained(str(OUTPUT_ADAPTER))
+    # ── 5. Save adapter ───────────────────────────────────────────────────────
+    print(f"\n  Saving LoRA adapter → {ADAPTER_OUT}")
+    os.makedirs(ADAPTER_OUT, exist_ok=True)
+    model.save_pretrained(ADAPTER_OUT)
+    tokenizer.save_pretrained(ADAPTER_OUT)
 
-    print(f"      Merging adapter and saving full model to: {OUTPUT_MERGED}")
-    # Merge and unload, modeli baseline ile birleştirip kalıcı hale getirir
-    # Bu sayede bert_score_fn doğrudan bu dizini model_type olarak kullanabilir
-    merged_model = model.merge_and_unload()
-    merged_model.save_pretrained(str(OUTPUT_MERGED))
-    tokenizer.save_pretrained(str(OUTPUT_MERGED))
+    # ── 6. Merge + save full model ────────────────────────────────────────────
+    print(f"  Merging weights and saving → {MERGED_OUT}")
+    merged = model.merge_and_unload()
+    os.makedirs(MERGED_OUT, exist_ok=True)
+    merged.save_pretrained(MERGED_OUT)
+    tokenizer.save_pretrained(MERGED_OUT)
 
-    print("\nDone! RoBERTa fine-tuning is complete.")
+    print("\n  Done.  Use roberta-cowrie-merged/ as the BERTScore model_type.")
+    print(f"  Example:\n    from bert_score import score")
+    print(f"    P, R, F1 = score(hyps, refs, model_type='{MERGED_OUT}')")
+
 
 if __name__ == "__main__":
     main()

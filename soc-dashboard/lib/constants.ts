@@ -49,6 +49,45 @@ export const TUNNEL_FEATURE_IMPORTANCE = [
   { feature: "cmd_unique_count",    rf: 0.042, xgb: 0.094 },
 ];
 
+export const LLM_COMPARISON = [
+  {
+    name: "Base Model",
+    desc: "Phi-3 mini 4k — no fine-tuning",
+    color: "#94a3b8",
+    bertF1: 0.8038, bertPrecision: 0.7963, bertRecall: 0.8127,
+    hallucinationRate: 0.0, leakageFailures: 0, semanticFailures: 0,
+    fidelityRate: 100.0, aeiMean: 1.7988, aeiWithout: 1.7988, aeiWith: 0.0,
+    highlight: false,
+  },
+  {
+    name: "LoRA Fine-tuned",
+    desc: "LoRA Phi-3 (rank=16, α=32) — our model",
+    color: "#22c55e",
+    bertF1: 0.9378, bertPrecision: 0.9449, bertRecall: 0.9321,
+    hallucinationRate: 0.0, leakageFailures: 0, semanticFailures: 0,
+    fidelityRate: 100.0, aeiMean: 1.8562, aeiWithout: 1.8562, aeiWith: 0.0,
+    highlight: true,
+  },
+  {
+    name: "LoRA + Domain RoBERTa",
+    desc: "LoRA Phi-3 scored with domain-fine-tuned RoBERTa",
+    color: "#3b82f6",
+    bertF1: 0.9383, bertPrecision: 0.9459, bertRecall: 0.9320,
+    hallucinationRate: 0.0, leakageFailures: 0, semanticFailures: 0,
+    fidelityRate: 100.0, aeiMean: 1.8506, aeiWithout: 1.8506, aeiWith: 0.0,
+    highlight: false,
+  },
+  {
+    name: "Hallucination Injection",
+    desc: "Ablation: hallucinations intentionally injected into prompt",
+    color: "#ef4444",
+    bertF1: 0.7967, bertPrecision: 0.7973, bertRecall: 0.7980,
+    hallucinationRate: 43.3, leakageFailures: 158, semanticFailures: 0,
+    fidelityRate: 56.7, aeiMean: 1.23, aeiWithout: 1.8322, aeiWith: 1.0004,
+    highlight: false,
+  },
+];
+
 export const SAMPLE_GENERATIONS = [
   { attacker: "su root",               cowrie: "Password: \\nsu: Authentication failure",    phi3: "Password: \\nsu: incorrect password" },
   { attacker: "uname -a",              cowrie: "Linux svr04 3.2.0-4-amd64 #1 SMP x86_64",    phi3: "Linux svr04 3.2.0-4-amd64 #1 SMP Debian 3.2.68-1+deb7u1 x86_64 GNU/Linux" },

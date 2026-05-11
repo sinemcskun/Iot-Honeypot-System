@@ -5,7 +5,7 @@ import {
   ResponsiveContainer, Cell,
 } from "recharts";
 import { AlertTriangle } from "lucide-react";
-import { SAMPLE_GENERATIONS } from "@/lib/constants";
+import { SAMPLE_GENERATIONS, LLM_COMPARISON } from "@/lib/constants";
 
 interface AEIResult {
   factor: number;
@@ -110,6 +110,58 @@ export default function LLMTab() {
   return (
     <div className="fade-in">
 
+      {/* ── Model Comparison (always visible, static) ─────────────────────── */}
+      <div className="card" style={{ padding: 20, marginBottom: 16 }}>
+        <div style={{ fontSize: 11, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 16 }}>
+          Model Comparison — Phi-3 QLoRA Deception Engine (4 Configurations)
+        </div>
+
+        {/* Summary KPI cards */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 20 }}>
+          {LLM_COMPARISON.map(m => (
+            <div key={m.name} style={{
+              padding: 14, borderRadius: 8,
+              background: m.highlight ? `${m.color}10` : "var(--bg-primary)",
+              border: `1px solid ${m.highlight ? m.color + "40" : "var(--border)"}`,
+            }}>
+              <div style={{ fontSize: 10, color: m.color, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 2 }}>
+                {m.name}
+                {m.highlight && <span style={{ marginLeft: 6, fontSize: 9, padding: "1px 5px", borderRadius: 3, background: `${m.color}20`, border: `1px solid ${m.color}40` }}>★ BEST</span>}
+              </div>
+              <div style={{ fontSize: 10, color: "var(--text-muted)", marginBottom: 10 }}>{m.desc}</div>
+              <div style={{ fontSize: 22, fontWeight: 700, color: m.color, letterSpacing: "-0.02em" }}>
+                {(m.bertF1 * 100).toFixed(1)}%
+              </div>
+              <div style={{ fontSize: 10, color: "var(--text-secondary)", marginBottom: 8 }}>BERTScore F1</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10 }}>
+                  <span style={{ color: "var(--text-secondary)" }}>Hallucination</span>
+                  <span style={{ color: m.hallucinationRate > 0 ? "#ef4444" : "#22c55e", fontWeight: 600 }}>
+                    {m.hallucinationRate.toFixed(1)}%
+                  </span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10 }}>
+                  <span style={{ color: "var(--text-secondary)" }}>Fidelity</span>
+                  <span style={{ color: m.fidelityRate === 100 ? "#22c55e" : "#f59e0b", fontWeight: 600 }}>
+                    {m.fidelityRate.toFixed(1)}%
+                  </span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10 }}>
+                  <span style={{ color: "var(--text-secondary)" }}>AEI Mean</span>
+                  <span style={{ color: "var(--text-primary)", fontWeight: 600 }}>{m.aeiMean.toFixed(4)}</span>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ marginTop: 12, padding: 10, background: "rgba(34,197,94,0.06)", border: "1px solid rgba(34,197,94,0.15)", borderRadius: 6, fontSize: 11, color: "#4ade80" }}>
+          ✓ LoRA Fine-tuned and LoRA + Domain RoBERTa both achieve 0% hallucination and 100% fidelity.
+          The Hallucination Injection column is an ablation study — intentional hallucinations were inserted into the prompt to show what the model produces without proper grounding.
+          AEI without hallucinations recovers to 1.8322, confirming the base capability is intact.
+        </div>
+      </div>
+
       {/* Error banner */}
       {fetchError && (
         <div style={{ marginBottom: 20, padding: 16, background: "rgba(239,68,68,0.06)", border: "1px solid rgba(239,68,68,0.25)", borderRadius: 8 }}>
@@ -146,44 +198,6 @@ export default function LLMTab() {
                 </span>
               </div>
             </div>
-          </div>
-
-          {/* KPI Row */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginBottom: 24 }}>
-            {[
-              {
-                label: "BERTScore F1",
-                value: data.bertscoreF1 != null ? (data.bertscoreF1 * 100).toFixed(1) + "%" : "—",
-                sub: "Semantic similarity (RoBERTa)",
-                color: "#22c55e",
-              },
-              {
-                label: "Hallucination Rate",
-                value: data.hallucinationRate != null ? data.hallucinationRate.toFixed(1) + "%" : "—",
-                sub: "F1 < 0.45 OR AI phrase leakage",
-                color: "#22c55e",
-              },
-              {
-                label: "Fidelity Rate",
-                value: data.fidelityRate != null ? data.fidelityRate.toFixed(1) + "%" : "—",
-                sub: "F1 ≥ 0.75 (high-quality responses)",
-                color: "#f59e0b",
-              },
-              {
-                label: "AEI Mean (f=0.20)",
-                value: data.aeiMean != null ? data.aeiMean.toFixed(2) : "—",
-                sub: data.cmdIncreasePct != null && data.durIncreasePct != null
-                  ? `+${data.cmdIncreasePct}% cmds · +${data.durIncreasePct}% duration`
-                  : "—",
-                color: "#a855f7",
-              },
-            ].map(({ label, value, sub, color }) => (
-              <div key={label} className="card card-accent" style={{ padding: 18 }}>
-                <div style={{ fontSize: 10, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>{label}</div>
-                <div style={{ fontSize: 26, fontWeight: 700, color, letterSpacing: "-0.02em" }}>{value}</div>
-                <div style={{ fontSize: 10, color: "var(--text-secondary)", marginTop: 4 }}>{sub}</div>
-              </div>
-            ))}
           </div>
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
@@ -318,30 +332,6 @@ export default function LLMTab() {
           ))}
         </div>
 
-        {/* Improvements section */}
-        <div style={{ marginTop: 20, borderTop: "1px solid var(--border)", paddingTop: 16 }}>
-          <div style={{ fontSize: 11, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 12 }}>
-            Identified Improvement Opportunities
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-            {[
-              { title: "Expand Training Dataset", desc: "365 samples is small for 3.8B model. Target 2,000–5,000 pairs via more TTY logs and command variations.", color: "#ef4444", priority: "Critical" },
-              { title: "Multi-Turn Session Context", desc: "Train with 2–3 previous commands in context so model maintains state within a session.", color: "#f59e0b", priority: "High" },
-              { title: "System Prompt Enrichment", desc: "Add hostname, kernel version, installed packages to the system prompt for cross-session consistency.", color: "#f59e0b", priority: "High" },
-              { title: "Expert Hallucination Review", desc: "Manual review of 'hallucinated' samples — many are valid Linux responses that ROUGE/BERTScore underscores.", color: "#3b82f6", priority: "Medium" },
-              { title: "Response Caching Layer", desc: "Cache frequent commands (uname, id, whoami) to reduce GPU inference latency in live Cowrie deployment.", color: "#3b82f6", priority: "Medium" },
-              { title: "Live Cowrie Integration", desc: "Implement command router in Cowrie Python code — unknown commands forwarded to LLM gateway with output filter.", color: "#22c55e", priority: "Future" },
-            ].map(item => (
-              <div key={item.title} style={{ padding: 12, background: `${item.color}08`, border: `1px solid ${item.color}25`, borderRadius: 6 }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
-                  <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text-primary)" }}>{item.title}</span>
-                  <span style={{ fontSize: 10, padding: "1px 6px", borderRadius: 3, background: `${item.color}20`, color: item.color }}>{item.priority}</span>
-                </div>
-                <div style={{ fontSize: 11, color: "var(--text-secondary)", lineHeight: 1.5 }}>{item.desc}</div>
-              </div>
-            ))}
-          </div>
-        </div>
       </div>
 
       {/* Cowrie Response Simulator */}
